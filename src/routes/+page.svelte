@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
   import { Tooltip } from "bits-ui";
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import {
     CalendarDays,
     Check,
@@ -17,13 +17,18 @@
     Trash2,
     Undo2,
     X,
+    ZoomIn,
+    ZoomOut,
   } from "lucide-svelte";
   import { formatDuration, formatTime, snapMinute } from "$lib/schedule";
   import type { Category, ItemInput, OverlapWarning, ScheduleItem, WeekView, Weekday } from "$lib/types";
 
   let { data } = $props<{ data: { week: WeekView } }>();
 
-  const HOUR_HEIGHT = 128;
+  const DEFAULT_HOUR_HEIGHT = 128;
+  const MIN_HOUR_HEIGHT = 72;
+  const MAX_HOUR_HEIGHT = 176;
+  const ZOOM_STEP = 8;
   const PIN_HEIGHT = 28;
   const MIN_BLOCK_HEIGHT = 18;
 
@@ -36,6 +41,7 @@
   let dayFocus = $state(false);
   let visibleDay = $state<Weekday>(4);
   let newVersionName = $state("");
+  let hourHeight = $state(DEFAULT_HOUR_HEIGHT);
   let dragging = $state<{
     id: string;
     mode: "move" | "resize-start" | "resize-end";
@@ -52,6 +58,15 @@
       const incomingItems = incoming.days.flatMap((day: WeekView["days"][number]) => day.items);
       if (selectedId && !incomingItems.some((item: ScheduleItem) => item.id === selectedId)) selectedId = null;
     });
+  });
+
+  onMount(() => {
+    const stored = localStorage.getItem("schedule-studio-hour-height");
+    if (stored !== null && Number.isFinite(Number(stored))) hourHeight = clampZoom(Number(stored));
+  });
+
+  $effect(() => {
+    localStorage.setItem("schedule-studio-hour-height", String(hourHeight));
   });
 
   const selected = $derived(allItems().find((item: ScheduleItem) => item.id === selectedId) ?? null);
@@ -182,8 +197,20 @@
     const height =
       item.kind === "pin"
         ? PIN_HEIGHT
-        : Math.max(MIN_BLOCK_HEIGHT, (((item.endMinute ?? item.startMinute + 15) - item.startMinute) / 60) * HOUR_HEIGHT);
+        : Math.max(MIN_BLOCK_HEIGHT, (((item.endMinute ?? item.startMinute + 15) - item.startMinute) / 60) * hourHeight);
     return `top:${top}%;height:${item.kind === "pin" ? `${PIN_HEIGHT}px` : `${height}px`};`;
+  }
+
+  function clampZoom(value: number) {
+    return Math.min(MAX_HOUR_HEIGHT, Math.max(MIN_HOUR_HEIGHT, Math.round(value / ZOOM_STEP) * ZOOM_STEP));
+  }
+
+  function setZoom(value: number) {
+    hourHeight = clampZoom(value);
+  }
+
+  function zoomPercent() {
+    return Math.round((hourHeight / DEFAULT_HOUR_HEIGHT) * 100);
   }
 
   function itemDuration(item: ScheduleItem) {
@@ -230,7 +257,7 @@
     if (!dragging) return;
     const item = allItems().find((candidate: ScheduleItem) => candidate.id === dragging?.id);
     if (!item) return;
-    const deltaMinutes = snapMinute(((event.clientY - dragging.originY) / HOUR_HEIGHT) * 60);
+    const deltaMinutes = snapMinute(((event.clientY - dragging.originY) / hourHeight) * 60);
     let startMinute = dragging.originStart;
     let endMinute = dragging.originEnd;
 
@@ -304,6 +331,27 @@
         <Plus size={15} /> Add pin
       </button>
       <div class="mx-2 h-6 w-px bg-border"></div>
+      <div class="flex h-8 items-center gap-2 rounded-md border border-border bg-muted/30 px-2 text-muted-foreground">
+        <button class="rounded p-1 hover:bg-muted hover:text-foreground" title="Zoom out" on:click={() => setZoom(hourHeight - ZOOM_STEP)}>
+          <ZoomOut size={14} />
+        </button>
+        <input
+          class="h-1.5 w-24 accent-[#7aa2f7]"
+          aria-label="Timeline zoom"
+          type="range"
+          min={MIN_HOUR_HEIGHT}
+          max={MAX_HOUR_HEIGHT}
+          step={ZOOM_STEP}
+          value={hourHeight}
+          on:input={(event) => setZoom(Number(event.currentTarget.value))}
+        />
+        <button class="rounded p-1 hover:bg-muted hover:text-foreground" title="Zoom in" on:click={() => setZoom(hourHeight + ZOOM_STEP)}>
+          <ZoomIn size={14} />
+        </button>
+        <button class="min-w-10 rounded px-1 text-[11px] font-medium tabular-nums hover:bg-muted hover:text-foreground" title="Reset zoom" on:click={() => setZoom(DEFAULT_HOUR_HEIGHT)}>
+          {zoomPercent()}%
+        </button>
+      </div>
       <label class="flex h-8 items-center gap-2 rounded-md border border-border bg-muted/30 px-3 text-[12px] text-muted-foreground has-checked:border-[#7aa2f7]/60 has-checked:text-[#c0caf5]">
         Day focus
         <input class="sr-only" type="checkbox" bind:checked={dayFocus} />
@@ -337,7 +385,7 @@
       <div class="relative min-h-0 flex-1 overflow-auto">
         <div
           class="relative grid min-h-[980px]"
-          style="grid-template-columns: 80px repeat({displayedDays.length}, minmax(150px, 1fr)); height: {(totalGridMinutes / 60) * HOUR_HEIGHT}px;"
+          style="grid-template-columns: 80px repeat({displayedDays.length}, minmax(150px, 1fr)); height: {(totalGridMinutes / 60) * hourHeight}px;"
         >
           <div class="relative border-r border-border bg-surface/70">
             {#each hourTicks() as tick}
@@ -655,7 +703,7 @@
         </Tooltip.Portal>
       </Tooltip.Root>
     </Tooltip.Provider>
-    <span class="mx-auto">15-minute grid</span>
+    <span class="mx-auto">15-minute grid · {zoomPercent()}% zoom</span>
     <span>All data is stored locally on this device.</span>
   </footer>
 </div>
