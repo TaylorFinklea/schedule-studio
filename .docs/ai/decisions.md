@@ -13,3 +13,4 @@
 ## 2026-04-28
 
 - Calendar hover creation shows explicit Block and Pin actions instead of creating items immediately, and calendar-created blocks default to 30 minutes.
+- Schedule editing uses 5-minute precision globally, keeps existing integer-minute SQLite storage, and supports zoom up to 360 px/hour for small blocks.

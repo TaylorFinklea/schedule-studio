@@ -20,7 +20,12 @@
     ZoomIn,
     ZoomOut,
   } from "lucide-svelte";
-  import { formatDuration, formatTime, snapMinute } from "$lib/schedule";
+  import {
+    formatDuration,
+    formatTime,
+    SNAP_MINUTES,
+    snapMinute,
+  } from "$lib/schedule";
   import type {
     Category,
     ItemInput,
@@ -34,10 +39,10 @@
 
   const DEFAULT_HOUR_HEIGHT = 128;
   const MIN_HOUR_HEIGHT = 72;
-  const MAX_HOUR_HEIGHT = 176;
+  const MAX_HOUR_HEIGHT = 360;
   const ZOOM_STEP = 8;
   const PIN_HEIGHT = 28;
-  const MIN_BLOCK_HEIGHT = 18;
+  const MIN_BLOCK_HEIGHT = 16;
   const DEFAULT_BLOCK_DURATION = 60;
   const HOVER_BLOCK_DURATION = 30;
 
@@ -256,16 +261,18 @@
 
   function itemStyle(item: ScheduleItem) {
     const top = ((item.startMinute - maxStart) / totalGridMinutes) * 100;
-    const height =
-      item.kind === "pin"
-        ? PIN_HEIGHT
-        : Math.max(
-            MIN_BLOCK_HEIGHT,
-            (((item.endMinute ?? item.startMinute + 15) - item.startMinute) /
-              60) *
-              hourHeight,
-          );
+    const height = item.kind === "pin" ? PIN_HEIGHT : blockHeight(item);
     return `top:${top}%;height:${item.kind === "pin" ? `${PIN_HEIGHT}px` : `${height}px`};`;
+  }
+
+  function blockHeight(item: ScheduleItem) {
+    return Math.max(
+      MIN_BLOCK_HEIGHT,
+      (((item.endMinute ?? item.startMinute + SNAP_MINUTES) -
+        item.startMinute) /
+        60) *
+        hourHeight,
+    );
   }
 
   function clampZoom(value: number) {
@@ -289,9 +296,9 @@
 
   function itemDensity(item: ScheduleItem) {
     if (item.kind === "pin") return "pin";
-    const duration = itemDuration(item);
-    if (duration <= 15) return "micro";
-    if (duration < 45) return "compact";
+    const height = blockHeight(item);
+    if (height < 28) return "micro";
+    if (height < 48) return "compact";
     return "normal";
   }
 
@@ -392,14 +399,15 @@
     } else if (dragging.mode === "resize-start") {
       startMinute = Math.min(
         snapMinute(dragging.originStart + deltaMinutes),
-        (dragging.originEnd ?? dragging.originStart + 15) - 15,
+        (dragging.originEnd ?? dragging.originStart + SNAP_MINUTES) -
+          SNAP_MINUTES,
       );
     } else if (dragging.mode === "resize-end") {
       endMinute = Math.max(
         snapMinute(
           (dragging.originEnd ?? dragging.originStart + 60) + deltaMinutes,
         ),
-        dragging.originStart + 15,
+        dragging.originStart + SNAP_MINUTES,
       );
     }
 
@@ -759,6 +767,22 @@
                         title={`${item.title}: ${formatTime(item.startMinute)} - ${formatTime(item.endMinute ?? item.startMinute)}`}
                       >
                         {item.title}
+                      </span>
+                    {:else if density === "compact"}
+                      <span
+                        class="relative block truncate text-[11px] leading-[18px] font-semibold"
+                        title={`${item.title}: ${formatTime(item.startMinute)} - ${formatTime(item.endMinute ?? item.startMinute)}`}
+                      >
+                        {item.title}
+                        <span class="text-foreground/65 font-normal">
+                          · {formatTime(item.startMinute)
+                            .replace(" AM", "")
+                            .replace(" PM", "")} - {formatTime(
+                            item.endMinute ?? item.startMinute,
+                          )
+                            .replace(" AM", "")
+                            .replace(" PM", "")}
+                        </span>
                       </span>
                     {:else}
                       <span
@@ -1150,7 +1174,7 @@
         </Tooltip.Portal>
       </Tooltip.Root>
     </Tooltip.Provider>
-    <span class="mx-auto">15-minute grid · {zoomPercent()}% zoom</span>
+    <span class="mx-auto">5-minute grid · {zoomPercent()}% zoom</span>
     <span>All data is stored locally on this device.</span>
   </footer>
 </div>
@@ -1196,7 +1220,7 @@
           <input
             class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
             type="number"
-            step="15"
+            step={SNAP_MINUTES}
             bind:value={draft.startMinute}
           />
         </label>
@@ -1207,7 +1231,7 @@
           <input
             class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
             type="number"
-            step="15"
+            step={SNAP_MINUTES}
             bind:value={draft.endMinute}
           />
         </label>

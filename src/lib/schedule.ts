@@ -16,7 +16,7 @@ export const DAY_NAMES = [
   "Sat",
   "Sun",
 ] as const;
-export const SNAP_MINUTES = 15;
+export const SNAP_MINUTES = 5;
 
 export function clampMinute(minute: number): number {
   return Math.max(0, Math.min(24 * 60, minute));

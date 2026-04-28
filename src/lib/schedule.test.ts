@@ -21,9 +21,9 @@ const base = {
 };
 
 describe("schedule helpers", () => {
-  it("snaps to the nearest 15-minute increment", () => {
-    expect(snapMinute(367)).toBe(360);
-    expect(snapMinute(368)).toBe(375);
+  it("snaps to the nearest 5-minute increment", () => {
+    expect(snapMinute(367)).toBe(365);
+    expect(snapMinute(368)).toBe(370);
   });
 
   it("formats time and duration", () => {

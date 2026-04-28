@@ -6,6 +6,7 @@
 - [x] Implement week grid, blocks, pins, categories, totals, and overlap warnings.
 - [x] Add saved sandbox schedule versions.
 - [x] Add hover-to-add controls for schedule blocks and pins.
+- [x] Convert schedule editing to 5-minute precision with deeper zoom.
 - [ ] Improve drag/drop between day columns.
 - [ ] Add full date-specific override workflow.
 

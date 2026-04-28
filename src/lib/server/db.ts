@@ -14,9 +14,12 @@ import type {
 import {
   calculateDailyTotals,
   calculateWeeklyTotals,
+  clampMinute,
   DAY_NAMES,
   findOverlaps,
   isoDate,
+  SNAP_MINUTES,
+  snapMinute,
   weekStartFor,
 } from "$lib/schedule";
 
@@ -500,8 +503,17 @@ export function upsertItem(input: ItemInput): ScheduleItem {
           .get(input.id) as { template_id: string } | undefined
       )?.template_id ?? activeTemplateId(db))
     : activeTemplateId(db);
+  const startMinute =
+    input.kind === "block"
+      ? Math.min(24 * 60 - SNAP_MINUTES, snapMinute(input.startMinute))
+      : snapMinute(input.startMinute);
   const endMinute =
-    input.kind === "pin" ? null : (input.endMinute ?? input.startMinute + 60);
+    input.kind === "pin"
+      ? null
+      : Math.max(
+          startMinute + SNAP_MINUTES,
+          snapMinute(clampMinute(input.endMinute ?? startMinute + 60)),
+        );
   db.prepare(
     `INSERT INTO schedule_items
       (id, template_id, kind, title, weekday, start_minute, end_minute, category_id, notes, completed, source, created_at, updated_at)
@@ -523,7 +535,7 @@ export function upsertItem(input: ItemInput): ScheduleItem {
     input.kind,
     input.title.trim() || (input.kind === "pin" ? "New pin" : "New block"),
     input.weekday,
-    input.startMinute,
+    startMinute,
     endMinute,
     input.categoryId,
     input.notes ?? "",
