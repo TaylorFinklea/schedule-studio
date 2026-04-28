@@ -36,6 +36,14 @@ rm -rf .local
 pnpm dev
 ```
 
+## Docker
+
+```sh
+docker compose up --build
+```
+
+The container listens on `http://localhost:3000` and stores SQLite data in the `schedule-studio-data` Docker volume. Override the database path with `SCHEDULE_STUDIO_DB` if you run the image without Compose.
+
 ## Checks
 
 ```sh

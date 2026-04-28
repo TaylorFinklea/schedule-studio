@@ -8,3 +8,4 @@
 - Use Node's built-in `node:sqlite` driver so the app avoids native dependency build scripts.
 - Use a Tokyo Night-inspired dark palette as the default theme.
 - Store schedule versions as separate local SQLite templates, with active/default IDs in `app_settings`.
+- Package production with a multi-stage Node Docker image and a mounted `/data` SQLite volume.

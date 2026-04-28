@@ -1,0 +1,17 @@
+services:
+  schedule-studio:
+    build: .
+    image: schedule-studio:local
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      SCHEDULE_STUDIO_DB: /data/schedule-studio.sqlite
+    volumes:
+      - schedule-studio-data:/data
+    restart: unless-stopped
+
+volumes:
+  schedule-studio-data:
