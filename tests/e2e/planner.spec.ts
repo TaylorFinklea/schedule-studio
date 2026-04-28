@@ -8,8 +8,11 @@ test("renders the planner shell and opens the add block dialog", async ({
     page.getByRole("heading", { name: "Schedule Studio" }),
   ).toBeVisible();
   await expect(page.getByText("Weekly totals")).toBeVisible();
-  await page.getByRole("button", { name: "Add block" }).click({ force: true });
-  await expect(page.getByText("Title")).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: "Add block" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Add schedule item" }),
+  ).toBeVisible();
 });
 
 test("mobile can use day focus", async ({ page }) => {

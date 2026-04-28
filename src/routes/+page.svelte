@@ -23,14 +23,13 @@
 
   let { data } = $props<{ data: { week: WeekView } }>();
 
-  const HOUR_HEIGHT = 64;
+  const HOUR_HEIGHT = 128;
   const PIN_HEIGHT = 28;
-  const MIN_BLOCK_HEIGHT = 36;
+  const MIN_BLOCK_HEIGHT = 18;
 
   // svelte-ignore state_referenced_locally -- local planner state is resynced from loader data below after mutations.
   let week = $state<WeekView>(data.week);
-  // svelte-ignore state_referenced_locally -- this only chooses the initial editor selection.
-  let selectedId = $state<string | null>(data.week.days[3]?.items.find((item: ScheduleItem) => item.kind === "block")?.id ?? null);
+  let selectedId = $state<string | null>(null);
   let dialogOpen = $state(false);
   let dialogKind = $state<"block" | "pin">("block");
   let draft = $state<ItemInput>(newDraft("block", 1, 9 * 60));
@@ -183,8 +182,20 @@
     const height =
       item.kind === "pin"
         ? PIN_HEIGHT
-        : Math.max(MIN_BLOCK_HEIGHT, (((item.endMinute ?? item.startMinute + 15) - item.startMinute) / totalGridMinutes) * HOUR_HEIGHT * (totalGridMinutes / 60));
+        : Math.max(MIN_BLOCK_HEIGHT, (((item.endMinute ?? item.startMinute + 15) - item.startMinute) / 60) * HOUR_HEIGHT);
     return `top:${top}%;height:${item.kind === "pin" ? `${PIN_HEIGHT}px` : `${height}px`};`;
+  }
+
+  function itemDuration(item: ScheduleItem) {
+    return (item.endMinute ?? item.startMinute) - item.startMinute;
+  }
+
+  function itemDensity(item: ScheduleItem) {
+    if (item.kind === "pin") return "pin";
+    const duration = itemDuration(item);
+    if (duration <= 15) return "micro";
+    if (duration < 45) return "compact";
+    return "normal";
   }
 
   function hourTicks() {
@@ -282,13 +293,13 @@
       <button class="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground" title="Settings"><Settings size={15} /></button>
       <button
         class="flex h-8 items-center gap-2 rounded-md border border-[#bb9af7]/35 bg-[#bb9af7]/20 px-3 text-[12px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/30"
-        onclick={() => openCreate("block")}
+        on:click={() => openCreate("block")}
       >
         <Plus size={15} /> Add block
       </button>
       <button
         class="flex h-8 items-center gap-2 rounded-md border border-[#9ece6a]/30 bg-[#9ece6a]/16 px-3 text-[12px] font-semibold text-[#d3f6aa] hover:bg-[#9ece6a]/24"
-        onclick={() => openCreate("pin")}
+        on:click={() => openCreate("pin")}
       >
         <Plus size={15} /> Add pin
       </button>
@@ -312,7 +323,7 @@
         {#each displayedDays as day}
           <button
             class="border-l border-border px-3 text-left transition-colors hover:bg-muted/30 {day.weekday === visibleDay ? 'text-[#bb9af7]' : ''}"
-            onclick={() => (visibleDay = day.weekday)}
+            on:click={() => (visibleDay = day.weekday)}
           >
             <div class="text-[14px] font-semibold">{day.dateLabel}</div>
             <div class="mt-0.5 flex gap-4 text-[10px] text-muted-foreground">
@@ -357,33 +368,40 @@
               {#each day.items as item}
                 {@const category = categoryById(item.categoryId)}
                 {@const itemWarnings = warningsFor(item.id)}
+                {@const density = itemDensity(item)}
                 <button
-                  class="absolute left-2 right-2 z-10 rounded-md border px-2 text-left shadow-lg shadow-black/20 transition-transform hover:translate-y-[-1px] focus:outline-none focus:ring-2 focus:ring-ring {selectedId === item.id ? 'ring-2 ring-[#7aa2f7]/80' : ''} {item.kind === 'pin' ? 'flex items-center gap-2 bg-transparent !shadow-none' : ''}"
+                  class="absolute left-3 right-3 z-10 overflow-hidden rounded-md border text-left shadow-lg shadow-black/20 transition-transform hover:translate-y-[-1px] focus:outline-none focus:ring-2 focus:ring-ring {selectedId === item.id ? 'ring-2 ring-[#7aa2f7]/80' : ''} {density === 'pin' ? 'flex items-center gap-2 bg-transparent px-2 !shadow-none' : ''} {density === 'micro' ? 'px-2 py-0.5' : ''} {density === 'compact' ? 'px-2 py-1' : ''} {density === 'normal' ? 'px-3 py-2' : ''}"
                   style="{itemStyle(item)} border-color: {category.color}; background: {item.kind === 'pin' ? 'transparent' : `linear-gradient(135deg, ${category.color}42, ${category.color}1a)`};"
-                  onclick={() => (selectedId = item.id)}
-                  onpointermove={moveDrag}
-                  onpointerup={endDrag}
-                  onpointercancel={endDrag}
+                  on:click={() => (selectedId = item.id)}
+                  on:pointermove={moveDrag}
+                  on:pointerup={endDrag}
+                  on:pointercancel={endDrag}
                 >
                   {#if item.kind === "block"}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <span
                       class="absolute left-1/2 top-0 h-2 w-10 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize rounded-full border border-white/60 bg-white/80 {selectedId === item.id ? '' : 'hidden'}"
-                      onpointerdown={(event) => beginDrag(event, item, "resize-start")}
+                      on:pointerdown={(event) => beginDrag(event, item, "resize-start")}
                     ></span>
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <span
                       class="absolute bottom-0 left-1/2 h-2 w-10 -translate-x-1/2 translate-y-1/2 cursor-ns-resize rounded-full border border-white/60 bg-white/80 {selectedId === item.id ? '' : 'hidden'}"
-                      onpointerdown={(event) => beginDrag(event, item, "resize-end")}
+                      on:pointerdown={(event) => beginDrag(event, item, "resize-end")}
                     ></span>
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <span class="absolute inset-0 cursor-grab" onpointerdown={(event) => beginDrag(event, item, "move")}></span>
-                    <span class="relative block pt-2 text-[12px] font-semibold">{item.title}</span>
-                    <span class="relative mt-0.5 block text-[11px] text-foreground/70">
-                      {formatTime(item.startMinute).replace(" AM", "").replace(" PM", "")} - {formatTime(item.endMinute ?? item.startMinute).replace(" AM", "").replace(" PM", "")}
-                    </span>
+                    <span class="absolute inset-0 cursor-grab" on:pointerdown={(event) => beginDrag(event, item, "move")}></span>
+                    {#if density === "micro"}
+                      <span class="relative block truncate text-[11px] font-semibold leading-[16px]" title={`${item.title}: ${formatTime(item.startMinute)} - ${formatTime(item.endMinute ?? item.startMinute)}`}>
+                        {item.title}
+                      </span>
+                    {:else}
+                      <span class="relative block truncate text-[12px] font-semibold leading-[17px]">{item.title}</span>
+                      <span class="relative mt-0.5 block truncate text-[11px] leading-[14px] text-foreground/70">
+                        {formatTime(item.startMinute).replace(" AM", "").replace(" PM", "")} - {formatTime(item.endMinute ?? item.startMinute).replace(" AM", "").replace(" PM", "")}
+                      </span>
+                    {/if}
                     {#if itemWarnings.length}
-                      <span class="relative mt-2 inline-flex rounded bg-red-500/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">Overlap</span>
+                      <span class="relative mt-1 inline-flex rounded bg-red-500/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">Overlap</span>
                     {/if}
                   {:else}
                     <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background:{category.color}"></span>
@@ -410,7 +428,7 @@
           {#each week.versions as version}
             <button
               class="flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-[12px] {version.isActive ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/14 text-[#c0caf5]' : 'border-transparent hover:bg-muted/45'}"
-              onclick={() => activateVersion(version.id)}
+              on:click={() => activateVersion(version.id)}
               title={version.isDefault ? "Default schedule" : "Sandbox schedule"}
             >
               <span class="h-2.5 w-2.5 rounded-full {version.isDefault ? 'bg-[#9ece6a]' : 'bg-[#bb9af7]'}"></span>
@@ -427,15 +445,15 @@
           bind:value={newVersionName}
         />
         <div class="grid grid-cols-2 gap-2">
-          <button class="rounded-md border border-[#bb9af7]/35 bg-[#bb9af7]/14 px-2 py-1.5 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/24" onclick={createSandboxVersion}>
+          <button class="rounded-md border border-[#bb9af7]/35 bg-[#bb9af7]/14 px-2 py-1.5 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/24" on:click={createSandboxVersion}>
             Copy sandbox
           </button>
-          <button class="rounded-md border border-border px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground" onclick={renameActiveVersion}>
+          <button class="rounded-md border border-border px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground" on:click={renameActiveVersion}>
             Rename
           </button>
         </div>
         {#if week.templateId !== week.defaultTemplateId}
-          <button class="mt-2 w-full rounded-md border border-red-400/25 px-2 py-1.5 text-[11px] text-red-300 hover:bg-red-500/10" onclick={deleteCurrentSandbox}>
+          <button class="mt-2 w-full rounded-md border border-red-400/25 px-2 py-1.5 text-[11px] text-red-300 hover:bg-red-500/10" on:click={deleteCurrentSandbox}>
             Delete current sandbox
           </button>
         {/if}
@@ -469,7 +487,7 @@
           {#each week.dailyTotals as total}
             <button
               class="flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[12px] hover:bg-muted/50 {visibleDay === total.weekday ? 'border border-[#7aa2f7]/60 bg-[#7aa2f7]/16 text-[#c0caf5]' : 'border border-transparent'}"
-              onclick={() => {
+              on:click={() => {
                 visibleDay = total.weekday;
                 dayFocus = true;
               }}
@@ -486,7 +504,7 @@
           <div class="mb-4 flex items-center gap-2">
             <span class="h-3 w-3 rounded-full" style="background:{selectedCategory.color}"></span>
             <h2 class="flex-1 text-[14px] font-semibold">{selected.title}</h2>
-            <button class="rounded border border-border p-1 text-muted-foreground hover:text-foreground" onclick={() => (selectedId = null)}><X size={14} /></button>
+            <button class="rounded border border-border p-1 text-muted-foreground hover:text-foreground" on:click={() => (selectedId = null)}><X size={14} /></button>
           </div>
 
           <div class="mb-4 flex border-b border-border text-[12px]">
@@ -500,8 +518,8 @@
               <input
                 class="w-full rounded-md border border-border bg-muted/30 px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
                 value={selected.title}
-                oninput={(event) => updateLocalItem(selected.id, { title: event.currentTarget.value })}
-                onblur={() => persistItem(selected)}
+                on:input={(event) => updateLocalItem(selected.id, { title: event.currentTarget.value })}
+                on:blur={() => persistItem(selected)}
               />
             </label>
             <label class="block">
@@ -509,7 +527,7 @@
               <select
                 class="w-full rounded-md border border-border bg-muted/30 px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
                 value={selected.weekday}
-                onchange={(event) => {
+                on:change={(event) => {
                   updateLocalItem(selected.id, { weekday: Number(event.currentTarget.value) as Weekday });
                   persistItem({ ...selected, weekday: Number(event.currentTarget.value) as Weekday });
                 }}
@@ -554,7 +572,7 @@
               <select
                 class="w-full rounded-md border border-border bg-muted/30 px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
                 value={selected.categoryId}
-                onchange={(event) => {
+                on:change={(event) => {
                   updateLocalItem(selected.id, { categoryId: event.currentTarget.value });
                   persistItem({ ...selected, categoryId: event.currentTarget.value });
                 }}
@@ -573,7 +591,7 @@
                     class="h-5 w-5 rounded-full border {selected.categoryId === category.id ? 'border-white ring-2 ring-[#7aa2f7]' : 'border-transparent'}"
                     style="background:{category.color}"
                     title={category.name}
-                    onclick={() => {
+                    on:click={() => {
                       updateLocalItem(selected.id, { categoryId: category.id });
                       persistItem({ ...selected, categoryId: category.id });
                     }}
@@ -587,7 +605,7 @@
                 <input
                   type="checkbox"
                   checked={selected.completed}
-                  onchange={(event) => {
+                  on:change={(event) => {
                     updateLocalItem(selected.id, { completed: event.currentTarget.checked });
                     persistItem({ ...selected, completed: event.currentTarget.checked });
                   }}
@@ -604,13 +622,13 @@
             {/if}
 
             <div class="flex gap-2 pt-2">
-              <button class="flex items-center gap-1 rounded-md border border-red-400/30 px-3 py-2 text-red-300 hover:bg-red-500/10" onclick={deleteSelected}>
+              <button class="flex items-center gap-1 rounded-md border border-red-400/30 px-3 py-2 text-red-300 hover:bg-red-500/10" on:click={deleteSelected}>
                 <Trash2 size={14} /> Delete
               </button>
-              <button class="flex items-center gap-1 rounded-md border border-border px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground" onclick={duplicateSelected}>
+              <button class="flex items-center gap-1 rounded-md border border-border px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground" on:click={duplicateSelected}>
                 <Copy size={14} /> Duplicate
               </button>
-              <button class="ml-auto rounded-md bg-[#7aa2f7] px-4 py-2 font-semibold text-[#101014] hover:bg-[#9eceff]" onclick={() => (selectedId = null)}>Done</button>
+              <button class="ml-auto rounded-md bg-[#7aa2f7] px-4 py-2 font-semibold text-[#101014] hover:bg-[#9eceff]" on:click={() => (selectedId = null)}>Done</button>
             </div>
           </div>
         {:else}
@@ -647,7 +665,7 @@
     type="button"
     class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
     aria-label="Close add item dialog"
-    onclick={() => (dialogOpen = false)}
+    on:click={() => (dialogOpen = false)}
   ></button>
   <div
     role="dialog"
@@ -691,8 +709,8 @@
         </label>
       </div>
       <div class="mt-5 flex justify-end gap-2">
-        <button class="rounded-md border border-border px-3 py-2 text-[12px] text-muted-foreground hover:bg-muted" onclick={() => (dialogOpen = false)}>Cancel</button>
-        <button class="rounded-md bg-[#7aa2f7] px-3 py-2 text-[12px] font-semibold text-[#101014] hover:bg-[#9eceff]" onclick={createItem}>Create</button>
+        <button class="rounded-md border border-border px-3 py-2 text-[12px] text-muted-foreground hover:bg-muted" on:click={() => (dialogOpen = false)}>Cancel</button>
+        <button class="rounded-md bg-[#7aa2f7] px-3 py-2 text-[12px] font-semibold text-[#101014] hover:bg-[#9eceff]" on:click={createItem}>Create</button>
       </div>
   </div>
 {/if}
