@@ -7,3 +7,4 @@
 - Keep all real schedule data out of source control.
 - Use Node's built-in `node:sqlite` driver so the app avoids native dependency build scripts.
 - Use a Tokyo Night-inspired dark palette as the default theme.
+- Store schedule versions as separate local SQLite templates, with active/default IDs in `app_settings`.

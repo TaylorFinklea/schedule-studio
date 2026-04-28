@@ -36,6 +36,7 @@
   let draft = $state<ItemInput>(newDraft("block", 1, 9 * 60));
   let dayFocus = $state(false);
   let visibleDay = $state<Weekday>(4);
+  let newVersionName = $state("");
   let dragging = $state<{
     id: string;
     mode: "move" | "resize-start" | "resize-end";
@@ -136,6 +137,47 @@
     await invalidateAll();
   }
 
+  async function createSandboxVersion() {
+    const name = newVersionName.trim() || `${week.templateName} sandbox`;
+    await fetch("/api/versions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, sourceTemplateId: week.templateId }),
+    });
+    newVersionName = "";
+    selectedId = null;
+    await invalidateAll();
+  }
+
+  async function activateVersion(id: string) {
+    await fetch(`/api/versions/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "activate" }),
+    });
+    selectedId = null;
+    await invalidateAll();
+  }
+
+  async function renameActiveVersion() {
+    const nextName = newVersionName.trim();
+    if (!nextName) return;
+    await fetch(`/api/versions/${week.templateId}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: nextName }),
+    });
+    newVersionName = "";
+    await invalidateAll();
+  }
+
+  async function deleteCurrentSandbox() {
+    if (week.templateId === week.defaultTemplateId) return;
+    await fetch(`/api/versions/${week.templateId}`, { method: "DELETE" });
+    selectedId = null;
+    await invalidateAll();
+  }
+
   function itemStyle(item: ScheduleItem) {
     const top = ((item.startMinute - maxStart) / totalGridMinutes) * 100;
     const height =
@@ -225,7 +267,7 @@
     <h1 class="mr-4 text-[18px] font-semibold tracking-tight">Schedule Studio</h1>
 
     <button class="h-8 rounded-md border border-border bg-muted/35 px-3 text-[12px] font-medium text-foreground/90 hover:bg-muted">
-      Template Week
+      {week.templateName}
     </button>
     <button class="ml-2 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground" title="Previous week"><ChevronLeft size={16} /></button>
     <button class="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground" title="Next week"><ChevronRight size={16} /></button>
@@ -359,6 +401,46 @@
     </section>
 
     <aside class="flex w-[286px] shrink-0 flex-col border-l border-border bg-surface">
+      <section class="border-b border-border p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-[13px] font-semibold">Schedule versions</h2>
+          <span class="rounded border border-[#7aa2f7]/30 px-1.5 py-0.5 text-[10px] text-[#a9c3ff]">Active</span>
+        </div>
+        <div class="mb-3 space-y-1">
+          {#each week.versions as version}
+            <button
+              class="flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-[12px] {version.isActive ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/14 text-[#c0caf5]' : 'border-transparent hover:bg-muted/45'}"
+              onclick={() => activateVersion(version.id)}
+              title={version.isDefault ? "Default schedule" : "Sandbox schedule"}
+            >
+              <span class="h-2.5 w-2.5 rounded-full {version.isDefault ? 'bg-[#9ece6a]' : 'bg-[#bb9af7]'}"></span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{version.name}</span>
+                <span class="block font-mono text-[10px] text-muted-foreground">{formatDuration(version.totalMinutes)} · {version.itemCount} items</span>
+              </span>
+            </button>
+          {/each}
+        </div>
+        <input
+          class="mb-2 w-full rounded-md border border-border bg-muted/30 px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
+          placeholder="Sandbox name"
+          bind:value={newVersionName}
+        />
+        <div class="grid grid-cols-2 gap-2">
+          <button class="rounded-md border border-[#bb9af7]/35 bg-[#bb9af7]/14 px-2 py-1.5 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/24" onclick={createSandboxVersion}>
+            Copy sandbox
+          </button>
+          <button class="rounded-md border border-border px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground" onclick={renameActiveVersion}>
+            Rename
+          </button>
+        </div>
+        {#if week.templateId !== week.defaultTemplateId}
+          <button class="mt-2 w-full rounded-md border border-red-400/25 px-2 py-1.5 text-[11px] text-red-300 hover:bg-red-500/10" onclick={deleteCurrentSandbox}>
+            Delete current sandbox
+          </button>
+        {/if}
+      </section>
+
       <section class="border-b border-border p-4">
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-[13px] font-semibold">Categories</h2>

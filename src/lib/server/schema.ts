@@ -8,6 +8,11 @@ export const categories = sqliteTable("categories", {
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
 });
 
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
 export const templates = sqliteTable("templates", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

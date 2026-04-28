@@ -6,6 +6,8 @@ import type {
   DayBounds,
   ItemInput,
   ScheduleItem,
+  ScheduleVersion,
+  VersionInput,
   Weekday,
   WeekView,
 } from "$lib/types";
@@ -33,6 +35,13 @@ type BoundsRow = {
   sleep_minute: number;
   buffer_before: number;
   buffer_after: number;
+};
+
+type TemplateRow = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
 };
 
 type ItemRow = {
@@ -89,6 +98,30 @@ function runMigrations(db: SqliteDatabase) {
       MIGRATION_VERSION,
     );
   }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+  const hasActive = db
+    .prepare("SELECT value FROM app_settings WHERE key = 'active_template_id'")
+    .get();
+  if (!hasActive) {
+    db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?)").run(
+      "active_template_id",
+      DEFAULT_TEMPLATE_ID,
+    );
+  }
+  const hasDefault = db
+    .prepare("SELECT value FROM app_settings WHERE key = 'default_template_id'")
+    .get();
+  if (!hasDefault) {
+    db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?)").run(
+      "default_template_id",
+      DEFAULT_TEMPLATE_ID,
+    );
+  }
 }
 
 function seedIfEmpty(db: SqliteDatabase) {
@@ -117,7 +150,7 @@ function seedIfEmpty(db: SqliteDatabase) {
 
   db.prepare(
     "INSERT INTO templates (id, name, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-  ).run(DEFAULT_TEMPLATE_ID, "Template Week");
+  ).run(DEFAULT_TEMPLATE_ID, "Fictional planning template");
 
   const bounds = db.prepare(
     "INSERT INTO day_bounds (template_id, weekday, wake_minute, sleep_minute, buffer_before, buffer_after) VALUES (?, ?, ?, ?, ?, ?)",
@@ -291,6 +324,73 @@ function seedIfEmpty(db: SqliteDatabase) {
   });
 }
 
+function getSetting(db: SqliteDatabase, key: string, fallback: string) {
+  const row = db
+    .prepare("SELECT value FROM app_settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
+  return row?.value ?? fallback;
+}
+
+function setSetting(db: SqliteDatabase, key: string, value: string) {
+  db.prepare(
+    `INSERT INTO app_settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(key, value);
+}
+
+function activeTemplateId(db: SqliteDatabase) {
+  const id = getSetting(db, "active_template_id", DEFAULT_TEMPLATE_ID);
+  const exists = db.prepare("SELECT id FROM templates WHERE id = ?").get(id);
+  if (exists) return id;
+  setSetting(db, "active_template_id", DEFAULT_TEMPLATE_ID);
+  return DEFAULT_TEMPLATE_ID;
+}
+
+function defaultTemplateId(db: SqliteDatabase) {
+  return getSetting(db, "default_template_id", DEFAULT_TEMPLATE_ID);
+}
+
+function templateSummaries(db: SqliteDatabase): ScheduleVersion[] {
+  const activeId = activeTemplateId(db);
+  const defaultId = defaultTemplateId(db);
+  return db
+    .prepare(
+      `SELECT
+        templates.id,
+        templates.name,
+        templates.updated_at,
+        COUNT(schedule_items.id) AS item_count,
+        COALESCE(SUM(CASE
+          WHEN schedule_items.kind = 'block' AND schedule_items.end_minute IS NOT NULL
+          THEN schedule_items.end_minute - schedule_items.start_minute
+          ELSE 0
+        END), 0) AS total_minutes
+       FROM templates
+       LEFT JOIN schedule_items ON schedule_items.template_id = templates.id
+       GROUP BY templates.id
+       ORDER BY templates.updated_at DESC, templates.created_at DESC`,
+    )
+    .all()
+    .map((row) => {
+      const typed = row as {
+        id: string;
+        name: string;
+        updated_at: string;
+        item_count: number;
+        total_minutes: number;
+      };
+      return {
+        id: typed.id,
+        name: typed.name,
+        isActive: typed.id === activeId,
+        isDefault: typed.id === defaultId,
+        itemCount: typed.item_count,
+        totalMinutes: typed.total_minutes,
+        updatedAt: typed.updated_at,
+      };
+    });
+}
+
 function rowToItem(row: ItemRow): ScheduleItem {
   return {
     id: row.id,
@@ -309,9 +409,11 @@ function rowToItem(row: ItemRow): ScheduleItem {
 
 export function getWeekView(dateParam?: string): WeekView {
   const db = getDb();
+  const activeId = activeTemplateId(db);
+  const defaultId = defaultTemplateId(db);
   const template = db
-    .prepare("SELECT id, name FROM templates ORDER BY created_at LIMIT 1")
-    .get() as { id: string; name: string };
+    .prepare("SELECT * FROM templates WHERE id = ?")
+    .get(activeId) as TemplateRow;
   const categories = (
     db
       .prepare(
@@ -376,8 +478,10 @@ export function getWeekView(dateParam?: string): WeekView {
   return {
     templateId: template.id,
     templateName: template.name,
+    defaultTemplateId: defaultId,
     weekStart: isoDate(start),
     weekEnd: isoDate(end),
+    versions: templateSummaries(db),
     days,
     categories,
     weeklyTotals: calculateWeeklyTotals(items, categories),
@@ -389,6 +493,13 @@ export function getWeekView(dateParam?: string): WeekView {
 export function upsertItem(input: ItemInput): ScheduleItem {
   const db = getDb();
   const id = input.id ?? randomUUID();
+  const templateId = input.id
+    ? ((
+        db
+          .prepare("SELECT template_id FROM schedule_items WHERE id = ?")
+          .get(input.id) as { template_id: string } | undefined
+      )?.template_id ?? activeTemplateId(db))
+    : activeTemplateId(db);
   const endMinute =
     input.kind === "pin" ? null : (input.endMinute ?? input.startMinute + 60);
   db.prepare(
@@ -408,7 +519,7 @@ export function upsertItem(input: ItemInput): ScheduleItem {
       updated_at = CURRENT_TIMESTAMP`,
   ).run(
     id,
-    DEFAULT_TEMPLATE_ID,
+    templateId,
     input.kind,
     input.title.trim() || (input.kind === "pin" ? "New pin" : "New block"),
     input.weekday,
@@ -438,17 +549,104 @@ export function updateCategory(input: {
 }
 
 export function updateDayBounds(input: DayBounds) {
-  getDb()
-    .prepare(
-      `UPDATE day_bounds SET wake_minute = ?, sleep_minute = ?, buffer_before = ?, buffer_after = ?
+  const db = getDb();
+  db.prepare(
+    `UPDATE day_bounds SET wake_minute = ?, sleep_minute = ?, buffer_before = ?, buffer_after = ?
        WHERE template_id = ? AND weekday = ?`,
-    )
-    .run(
-      input.wakeMinute,
-      input.sleepMinute,
-      input.bufferBefore,
-      input.bufferAfter,
-      DEFAULT_TEMPLATE_ID,
-      input.weekday,
+  ).run(
+    input.wakeMinute,
+    input.sleepMinute,
+    input.bufferBefore,
+    input.bufferAfter,
+    activeTemplateId(db),
+    input.weekday,
+  );
+}
+
+export function createVersion(input: VersionInput): ScheduleVersion {
+  const db = getDb();
+  const sourceId = input.sourceTemplateId ?? activeTemplateId(db);
+  const source = db
+    .prepare("SELECT * FROM templates WHERE id = ?")
+    .get(sourceId) as TemplateRow | undefined;
+  if (!source) throw new Error("Source schedule version not found");
+
+  const id = randomUUID();
+  const name = input.name.trim() || `${source.name} copy`;
+  db.exec("BEGIN");
+  try {
+    db.prepare(
+      "INSERT INTO templates (id, name, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    ).run(id, name);
+    const bounds = db
+      .prepare("SELECT * FROM day_bounds WHERE template_id = ?")
+      .all(sourceId) as BoundsRow[];
+    const insertBounds = db.prepare(
+      "INSERT INTO day_bounds (template_id, weekday, wake_minute, sleep_minute, buffer_before, buffer_after) VALUES (?, ?, ?, ?, ?, ?)",
     );
+    bounds.forEach((row) =>
+      insertBounds.run(
+        id,
+        row.weekday,
+        row.wake_minute,
+        row.sleep_minute,
+        row.buffer_before,
+        row.buffer_after,
+      ),
+    );
+    const items = db
+      .prepare("SELECT * FROM schedule_items WHERE template_id = ?")
+      .all(sourceId) as ItemRow[];
+    const insertItem = db.prepare(
+      `INSERT INTO schedule_items
+        (id, template_id, kind, title, weekday, start_minute, end_minute, category_id, notes, completed, source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    );
+    items.forEach((item) =>
+      insertItem.run(
+        randomUUID(),
+        id,
+        item.kind,
+        item.title,
+        item.weekday,
+        item.start_minute,
+        item.end_minute,
+        item.category_id,
+        item.notes,
+        item.completed,
+        item.source,
+      ),
+    );
+    setSetting(db, "active_template_id", id);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return templateSummaries(db).find((version) => version.id === id)!;
+}
+
+export function activateVersion(id: string) {
+  const db = getDb();
+  const exists = db.prepare("SELECT id FROM templates WHERE id = ?").get(id);
+  if (!exists) throw new Error("Schedule version not found");
+  setSetting(db, "active_template_id", id);
+}
+
+export function renameVersion(id: string, name: string) {
+  const db = getDb();
+  db.prepare(
+    "UPDATE templates SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+  ).run(name.trim() || "Untitled schedule", id);
+}
+
+export function deleteVersion(id: string) {
+  const db = getDb();
+  if (id === defaultTemplateId(db)) {
+    throw new Error("The default schedule version cannot be deleted");
+  }
+  db.prepare("DELETE FROM templates WHERE id = ?").run(id);
+  if (activeTemplateId(db) === id) {
+    setSetting(db, "active_template_id", defaultTemplateId(db));
+  }
 }

@@ -1,6 +1,6 @@
 # Schedule Studio
 
-Schedule Studio is a local-first weekly planning app for seeing where time actually goes. It supports an ideal weekly template, draggable time blocks, instant timestamp pins, color-coded categories, overlap warnings, and daily/weekly category totals.
+Schedule Studio is a local-first weekly planning app for seeing where time actually goes. It supports an ideal weekly template, draggable time blocks, instant timestamp pins, color-coded categories, overlap warnings, saved sandbox versions, and daily/weekly category totals.
 
 The app is dark-mode-first and uses a Tokyo Night-inspired palette.
 

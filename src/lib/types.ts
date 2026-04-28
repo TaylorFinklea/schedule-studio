@@ -47,11 +47,23 @@ export type DailyTotal = {
   minutes: number;
 };
 
+export type ScheduleVersion = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  isDefault: boolean;
+  itemCount: number;
+  totalMinutes: number;
+  updatedAt: string;
+};
+
 export type WeekView = {
   templateId: string;
   templateName: string;
+  defaultTemplateId: string;
   weekStart: string;
   weekEnd: string;
+  versions: ScheduleVersion[];
   days: {
     weekday: Weekday;
     dateLabel: string;
@@ -76,4 +88,9 @@ export type ItemInput = {
   categoryId: string;
   notes?: string;
   completed?: boolean;
+};
+
+export type VersionInput = {
+  name: string;
+  sourceTemplateId?: string;
 };

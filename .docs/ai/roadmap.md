@@ -4,6 +4,7 @@
 
 - [x] Scaffold the local-first Schedule Studio app.
 - [x] Implement week grid, blocks, pins, categories, totals, and overlap warnings.
+- [x] Add saved sandbox schedule versions.
 - [ ] Improve drag/drop between day columns.
 - [ ] Add full date-specific override workflow.
 
@@ -11,9 +12,9 @@
 
 - [ ] Add category management dialogs.
 - [ ] Add editable wake/sleep bounds in the UI.
-- [ ] Add import/export for portable local backups.
+- [ ] Add import/export for portable local backups and schedule version snapshots.
 
 ## Later
 
 - [ ] Optional calendar export.
-- [ ] Multiple named templates.
+- [ ] Side-by-side schedule version comparison.
