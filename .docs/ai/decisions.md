@@ -9,3 +9,7 @@
 - Use a Tokyo Night-inspired dark palette as the default theme.
 - Store schedule versions as separate local SQLite templates, with active/default IDs in `app_settings`.
 - Package production with a multi-stage Node Docker image and a mounted `/data` SQLite volume.
+
+## 2026-04-28
+
+- Calendar hover creation shows explicit Block and Pin actions instead of creating items immediately, and calendar-created blocks default to 30 minutes.

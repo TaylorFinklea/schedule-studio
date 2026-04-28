@@ -2,7 +2,12 @@ import { expect, test } from "@playwright/test";
 
 test("renders the planner shell and opens the add block dialog", async ({
   page,
-}) => {
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "mobile",
+    "The compact mobile toolbar does not expose the header Add block button.",
+  );
+
   await page.goto("/");
   await expect(
     page.getByRole("heading", { name: "Schedule Studio" }),
@@ -19,4 +24,32 @@ test("mobile can use day focus", async ({ page }) => {
   await page.goto("/");
   await page.getByText("Day focus").click({ force: true });
   await expect(page.getByText("Daily totals")).toBeVisible();
+});
+
+test("can add a block from an empty calendar hover slot", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+
+  await page.getByTestId("day-column-6").hover({ position: { x: 80, y: 544 } });
+  await page.getByTestId("hover-add-block").click();
+
+  await expect(
+    page.getByRole("dialog", { name: "Add schedule item" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Start minute")).toHaveValue("495");
+  await expect(page.getByLabel("End minute")).toHaveValue("525");
+});
+
+test("can add a pin from an empty calendar hover slot", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+
+  await page.getByTestId("day-column-7").hover({ position: { x: 80, y: 544 } });
+  await page.getByTestId("hover-add-pin").click();
+
+  await expect(
+    page.getByRole("dialog", { name: "Add schedule item" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Start minute")).toHaveValue("495");
+  await expect(page.getByLabel("End minute")).toHaveCount(0);
 });
