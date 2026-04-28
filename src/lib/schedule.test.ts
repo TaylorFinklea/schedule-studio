@@ -4,6 +4,7 @@ import {
   findOverlaps,
   formatDuration,
   formatTime,
+  parseTimeInput,
   snapMinute,
 } from "$lib/schedule";
 import type { Category, ScheduleItem } from "$lib/types";
@@ -30,6 +31,13 @@ describe("schedule helpers", () => {
     expect(formatTime(0)).toBe("12:00 AM");
     expect(formatTime(13 * 60 + 15)).toBe("1:15 PM");
     expect(formatDuration(135)).toBe("2h 15m");
+  });
+
+  it("parses human-readable time input", () => {
+    expect(parseTimeInput("4:25 AM")).toBe(265);
+    expect(parseTimeInput("12:00 PM")).toBe(720);
+    expect(parseTimeInput("23:55")).toBe(1435);
+    expect(parseTimeInput("25:00")).toBeNull();
   });
 
   it("totals timed blocks and ignores pins", () => {

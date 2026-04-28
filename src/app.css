@@ -32,6 +32,7 @@
   --primary: #7aa2f7;
   --primary-foreground: #101014;
   --destructive: #f7768e;
+  --timeline: #11131f;
 }
 
 @layer base {
@@ -41,7 +42,7 @@
 
   html,
   body {
-    @apply h-full bg-background text-foreground;
+    @apply bg-background text-foreground h-full;
   }
 
   body {

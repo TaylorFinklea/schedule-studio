@@ -7,6 +7,7 @@
 - [x] Add saved sandbox schedule versions.
 - [x] Add hover-to-add controls for schedule blocks and pins.
 - [x] Convert schedule editing to 5-minute precision with deeper zoom.
+- [x] Add unified item editing, horizontal timeline mode, and built-in themes.
 - [ ] Improve drag/drop between day columns.
 - [ ] Add full date-specific override workflow.
 

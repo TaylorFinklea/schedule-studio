@@ -35,6 +35,29 @@ export function formatTime(minute: number): string {
   return `${displayHour}:${String(mins).padStart(2, "0")} ${suffix}`;
 }
 
+export function parseTimeInput(value: string): number | null {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{1,2})(?::(\d{2}))?\s*([ap]m)?$/i);
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2] ?? "0");
+  const meridiem = match[3]?.toLowerCase();
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || minutes > 59) {
+    return null;
+  }
+
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return null;
+    if (meridiem === "pm" && hours !== 12) hours += 12;
+    if (meridiem === "am" && hours === 12) hours = 0;
+  } else if (hours > 23) {
+    return null;
+  }
+
+  return snapMinute(hours * 60 + minutes);
+}
+
 export function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;

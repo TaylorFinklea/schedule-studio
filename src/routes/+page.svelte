@@ -23,9 +23,11 @@
   import {
     formatDuration,
     formatTime,
+    parseTimeInput,
     SNAP_MINUTES,
     snapMinute,
   } from "$lib/schedule";
+  import { APP_THEMES, DEFAULT_THEME_ID, themeById } from "$lib/themes";
   import type {
     Category,
     ItemInput,
@@ -45,21 +47,32 @@
   const MIN_BLOCK_HEIGHT = 16;
   const DEFAULT_BLOCK_DURATION = 60;
   const HOVER_BLOCK_DURATION = 30;
+  const HORIZONTAL_LABEL_WIDTH = 96;
+  const HORIZONTAL_ROW_HEIGHT = 88;
 
   // svelte-ignore state_referenced_locally -- local planner state is resynced from loader data below after mutations.
   let week = $state<WeekView>(data.week);
   let selectedId = $state<string | null>(null);
   let dialogOpen = $state(false);
+  let editorMode = $state<"create" | "edit">("create");
+  let editingId = $state<string | null>(null);
   let dialogKind = $state<"block" | "pin">("block");
   let draft = $state<ItemInput>(newDraft("block", 1, 9 * 60));
+  let draftStartTime = $state(formatTime(9 * 60));
+  let draftEndTime = $state(formatTime(10 * 60));
+  let editorError = $state("");
   let dayFocus = $state(false);
   let visibleDay = $state<Weekday>(4);
   let newVersionName = $state("");
   let hourHeight = $state(DEFAULT_HOUR_HEIGHT);
+  let layoutMode = $state<"vertical" | "horizontal">("vertical");
+  let settingsOpen = $state(false);
+  let themeId = $state(DEFAULT_THEME_ID);
   let hoverAdd = $state<{ weekday: Weekday; minute: number } | null>(null);
   let dragging = $state<{
     id: string;
     mode: "move" | "resize-start" | "resize-end";
+    axis: "vertical" | "horizontal";
     originY: number;
     originStart: number;
     originEnd: number | null;
@@ -85,10 +98,24 @@
     const stored = localStorage.getItem("schedule-studio-hour-height");
     if (stored !== null && Number.isFinite(Number(stored)))
       hourHeight = clampZoom(Number(stored));
+    const storedLayout = localStorage.getItem("schedule-studio-layout");
+    if (storedLayout === "vertical" || storedLayout === "horizontal")
+      layoutMode = storedLayout;
+    themeId = localStorage.getItem("schedule-studio-theme") ?? DEFAULT_THEME_ID;
+    applyTheme(themeId);
   });
 
   $effect(() => {
     localStorage.setItem("schedule-studio-hour-height", String(hourHeight));
+  });
+
+  $effect(() => {
+    localStorage.setItem("schedule-studio-layout", layoutMode);
+  });
+
+  $effect(() => {
+    localStorage.setItem("schedule-studio-theme", themeId);
+    applyTheme(themeId);
   });
 
   const selected = $derived(
@@ -119,6 +146,9 @@
     ),
   );
   const totalGridMinutes = $derived(maxEnd - maxStart);
+  const horizontalTimelineWidth = $derived(
+    (totalGridMinutes / 60) * hourHeight,
+  );
   const displayedDays = $derived(
     dayFocus
       ? week.days.filter((day) => day.weekday === visibleDay)
@@ -167,19 +197,90 @@
     startMinute = 9 * 60,
     duration = DEFAULT_BLOCK_DURATION,
   ) {
+    editorMode = "create";
+    editingId = null;
     dialogKind = kind;
     draft = newDraft(kind, weekday, startMinute, duration);
+    draftStartTime = formatTime(draft.startMinute);
+    draftEndTime = formatTime(draft.endMinute ?? draft.startMinute + duration);
+    editorError = "";
     hoverAdd = null;
     dialogOpen = true;
   }
 
-  async function createItem() {
-    await fetch("/api/items", {
-      method: "POST",
+  function openEdit(item: ScheduleItem) {
+    editorMode = "edit";
+    editingId = item.id;
+    dialogKind = item.kind;
+    draft = {
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      weekday: item.weekday,
+      startMinute: item.startMinute,
+      endMinute: item.endMinute,
+      categoryId: item.categoryId,
+      notes: item.notes,
+      completed: item.completed,
+    };
+    draftStartTime = formatTime(item.startMinute);
+    draftEndTime = formatTime(item.endMinute ?? item.startMinute);
+    editorError = "";
+    selectedId = item.id;
+    dialogOpen = true;
+  }
+
+  function draftForSave() {
+    const startMinute = parseTimeInput(draftStartTime);
+    const endMinute =
+      dialogKind === "block" ? parseTimeInput(draftEndTime) : null;
+    if (startMinute === null) {
+      editorError = "Use a start time like 4:25 AM.";
+      return null;
+    }
+    if (dialogKind === "block" && endMinute === null) {
+      editorError = "Use an end time like 5:15 AM.";
+      return null;
+    }
+    if (
+      dialogKind === "block" &&
+      endMinute !== null &&
+      endMinute <= startMinute
+    ) {
+      editorError = "End time must be after start time.";
+      return null;
+    }
+    editorError = "";
+    return {
+      ...draft,
+      kind: dialogKind,
+      startMinute,
+      endMinute: dialogKind === "pin" ? null : endMinute,
+    };
+  }
+
+  async function saveItem() {
+    const payload = draftForSave();
+    if (!payload) return;
+    const url =
+      editorMode === "edit" && editingId
+        ? `/api/items/${editingId}`
+        : "/api/items";
+    const item = await fetch(url, {
+      method: editorMode === "edit" && editingId ? "PUT" : "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(draft),
-    });
+      body: JSON.stringify(payload),
+    }).then((response) => response.json());
     dialogOpen = false;
+    selectedId = item.id ?? selectedId;
+    await invalidateAll();
+  }
+
+  async function deleteEditingItem() {
+    if (!editingId) return;
+    await fetch(`/api/items/${editingId}`, { method: "DELETE" });
+    dialogOpen = false;
+    selectedId = null;
     await invalidateAll();
   }
 
@@ -286,6 +387,15 @@
     hourHeight = clampZoom(value);
   }
 
+  function setLayoutMode(mode: "vertical" | "horizontal") {
+    layoutMode = mode;
+    localStorage.setItem("schedule-studio-layout", mode);
+  }
+
+  function openSettings() {
+    settingsOpen = true;
+  }
+
   function zoomPercent() {
     return Math.round((hourHeight / DEFAULT_HOUR_HEIGHT) * 100);
   }
@@ -329,7 +439,11 @@
     return !dialogOpen && !dragging && hoverAdd?.weekday === day.weekday;
   }
 
-  function updateHoverAdd(event: PointerEvent, weekday: Weekday) {
+  function updateHoverAdd(
+    event: PointerEvent,
+    weekday: Weekday,
+    axis: "vertical" | "horizontal" = "vertical",
+  ) {
     if (
       dialogOpen ||
       dragging ||
@@ -341,11 +455,11 @@
     }
 
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const offsetY = Math.max(
-      0,
-      Math.min(rect.height, event.clientY - rect.top),
-    );
-    const rawMinute = maxStart + (offsetY / hourHeight) * 60;
+    const offset =
+      axis === "horizontal"
+        ? Math.max(0, Math.min(rect.width, event.clientX - rect.left))
+        : Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+    const rawMinute = maxStart + (offset / hourHeight) * 60;
     const maxHoverStart = Math.max(maxStart, maxEnd - HOVER_BLOCK_DURATION);
     hoverAdd = {
       weekday,
@@ -364,13 +478,15 @@
     event: PointerEvent,
     item: ScheduleItem,
     mode: "move" | "resize-start" | "resize-end",
+    axis: "vertical" | "horizontal" = "vertical",
   ) {
     if (item.kind === "pin" && mode !== "move") return;
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     dragging = {
       id: item.id,
       mode,
-      originY: event.clientY,
+      axis,
+      originY: axis === "horizontal" ? event.clientX : event.clientY,
       originStart: item.startMinute,
       originEnd: item.endMinute,
       originWeekday: item.weekday,
@@ -384,8 +500,10 @@
       (candidate: ScheduleItem) => candidate.id === dragging?.id,
     );
     if (!item) return;
+    const pointer =
+      dragging.axis === "horizontal" ? event.clientX : event.clientY;
     const deltaMinutes = snapMinute(
-      ((event.clientY - dragging.originY) / hourHeight) * 60,
+      ((pointer - dragging.originY) / hourHeight) * 60,
     );
     let startMinute = dragging.originStart;
     let endMinute = dragging.originEnd;
@@ -433,6 +551,35 @@
         ),
       })),
     };
+  }
+
+  function applyTheme(id: string) {
+    if (typeof document === "undefined") return;
+    const theme = themeById(id);
+    document.documentElement.dataset.theme = theme.id;
+    document.documentElement.dataset.themeMode = theme.mode;
+    for (const [name, value] of Object.entries(theme.tokens)) {
+      document.documentElement.style.setProperty(name, value);
+    }
+  }
+
+  function horizontalItemStyle(item: ScheduleItem) {
+    const left = ((item.startMinute - maxStart) / 60) * hourHeight;
+    if (item.kind === "pin") {
+      return `left:${left}px;width:28px;`;
+    }
+    const width = Math.max(
+      MIN_BLOCK_HEIGHT * 2,
+      (((item.endMinute ?? item.startMinute + SNAP_MINUTES) -
+        item.startMinute) /
+        60) *
+        hourHeight,
+    );
+    return `left:${left}px;width:${width}px;`;
+  }
+
+  function horizontalHoverStyle(minute: number) {
+    return `left:${((minute - maxStart) / 60) * hourHeight}px;`;
   }
 
   function dateRangeLabel() {
@@ -483,7 +630,10 @@
       >
       <button
         class="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-2"
-        title="Settings"><Settings size={15} /></button
+        title="Settings"
+        aria-label="Settings"
+        data-testid="settings-button"
+        on:click={openSettings}><Settings size={15} /></button
       >
       <button
         class="flex h-8 items-center gap-2 rounded-md border border-[#bb9af7]/35 bg-[#bb9af7]/20 px-3 text-[12px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/30"
@@ -498,6 +648,28 @@
         <Plus size={15} /> Add pin
       </button>
       <div class="bg-border mx-2 h-6 w-px"></div>
+      <div
+        class="border-border bg-muted/30 flex h-8 items-center rounded-md border p-0.5 text-[11px]"
+      >
+        <button
+          class="h-6 rounded px-2 {layoutMode === 'vertical'
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+          data-testid="layout-vertical"
+          on:click={() => setLayoutMode("vertical")}
+        >
+          Vertical
+        </button>
+        <button
+          class="h-6 rounded px-2 {layoutMode === 'horizontal'
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+          data-testid="layout-horizontal"
+          on:click={() => setLayoutMode("horizontal")}
+        >
+          Horizontal
+        </button>
+      </div>
       <div
         class="border-border bg-muted/30 text-muted-foreground flex h-8 items-center gap-2 rounded-md border px-2"
       >
@@ -592,190 +764,215 @@
       </div>
 
       <div class="relative min-h-0 flex-1 overflow-auto">
-        <div
-          class="relative grid min-h-[980px]"
-          style="grid-template-columns: 80px repeat({displayedDays.length}, minmax(150px, 1fr)); height: {(totalGridMinutes /
-            60) *
-            hourHeight}px;"
-        >
-          <div class="border-border bg-surface/70 relative border-r">
-            {#each hourTicks() as tick}
-              <div
-                class="text-muted-foreground absolute right-0 left-0 -translate-y-2 px-4 text-[12px]"
-                style={tickStyle(tick)}
-              >
-                {formatTime(tick).replace(":00", "")}
-              </div>
-            {/each}
-          </div>
-
-          {#each displayedDays as day}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
-              class="border-border/80 relative border-r bg-[#11131f]"
-              data-testid={`day-column-${day.weekday}`}
-              on:pointermove={(event) => updateHoverAdd(event, day.weekday)}
-              on:pointerleave={() => clearHoverAdd(day.weekday)}
-            >
+        {#if layoutMode === "vertical"}
+          <div
+            class="relative grid min-h-[980px]"
+            style="grid-template-columns: 80px repeat({displayedDays.length}, minmax(150px, 1fr)); height: {(totalGridMinutes /
+              60) *
+              hourHeight}px;"
+          >
+            <div class="border-border bg-surface/70 relative border-r">
               {#each hourTicks() as tick}
                 <div
-                  class="absolute right-0 left-0 border-t border-dashed border-white/[0.055]"
+                  class="text-muted-foreground absolute right-0 left-0 -translate-y-2 px-4 text-[12px]"
                   style={tickStyle(tick)}
-                ></div>
-              {/each}
-              <div
-                class="absolute right-0 left-0 bg-sky-300/[0.055]"
-                style={boundsStyle(
-                  day.bounds.wakeMinute - day.bounds.bufferBefore,
-                  day.bounds.wakeMinute,
-                )}
-              >
-                <span class="px-3 py-1 text-[10px] text-sky-200/60">Buffer</span
                 >
-              </div>
-              <div
-                class="absolute right-0 left-0 bg-slate-300/[0.045]"
-                style={boundsStyle(
-                  day.bounds.sleepMinute,
-                  day.bounds.sleepMinute + day.bounds.bufferAfter,
-                )}
-              >
-                <span class="px-3 py-1 text-[10px] text-slate-200/60"
-                  >Buffer</span
-                >
-              </div>
-              <div
-                class="absolute right-0 left-0 border-t border-sky-300/20 bg-sky-300/[0.035]"
-                style={boundsStyle(
-                  day.bounds.wakeMinute,
-                  day.bounds.wakeMinute + 30,
-                )}
-              >
-                <span class="px-3 py-1 text-[10px] text-sky-100/55">Wake</span>
-              </div>
-              <div
-                class="absolute right-0 left-0 border-t border-slate-200/15 bg-slate-300/[0.04]"
-                style={boundsStyle(
-                  day.bounds.sleepMinute - 30,
-                  day.bounds.sleepMinute,
-                )}
-              >
-                <span class="px-3 py-1 text-[10px] text-slate-100/55"
-                  >Sleep</span
-                >
-              </div>
-
-              {#if canShowHoverAdd(day) && hoverAdd}
-                {@const add = hoverAdd}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                  class="absolute right-3 left-3 z-20 flex -translate-y-1/2 items-center gap-2 rounded-md border border-[#7aa2f7]/45 bg-[#1a1b26]/95 px-2 py-1 shadow-xl shadow-black/25 backdrop-blur"
-                  style={hoverAddStyle(add.minute)}
-                  data-testid="hover-add-toolbar"
-                  on:pointerdown|stopPropagation
-                >
-                  <span class="min-w-12 font-mono text-[11px] text-[#a9b1d6]"
-                    >{formatTime(add.minute)
-                      .replace(" AM", "")
-                      .replace(" PM", "")}</span
-                  >
-                  <button
-                    class="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded border border-[#bb9af7]/35 bg-[#bb9af7]/18 px-2 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/28"
-                    data-testid="hover-add-block"
-                    aria-label={`Add block at ${formatTime(add.minute)} on ${day.dateLabel}`}
-                    on:click|stopPropagation={() =>
-                      openCreate(
-                        "block",
-                        day.weekday,
-                        add.minute,
-                        HOVER_BLOCK_DURATION,
-                      )}
-                  >
-                    <Plus size={13} /> Block
-                  </button>
-                  <button
-                    class="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded border border-[#9ece6a]/30 bg-[#9ece6a]/16 px-2 text-[11px] font-semibold text-[#d3f6aa] hover:bg-[#9ece6a]/24"
-                    data-testid="hover-add-pin"
-                    aria-label={`Add pin at ${formatTime(add.minute)} on ${day.dateLabel}`}
-                    on:click|stopPropagation={() =>
-                      openCreate(
-                        "pin",
-                        day.weekday,
-                        add.minute,
-                        HOVER_BLOCK_DURATION,
-                      )}
-                  >
-                    <Plus size={13} /> Pin
-                  </button>
+                  {formatTime(tick).replace(":00", "")}
                 </div>
-              {/if}
+              {/each}
+            </div>
 
-              {#each day.items as item}
-                {@const category = categoryById(item.categoryId)}
-                {@const itemWarnings = warningsFor(item.id)}
-                {@const density = itemDensity(item)}
-                <button
-                  data-schedule-item
-                  class="focus:ring-ring absolute right-3 left-3 z-10 overflow-hidden rounded-md border text-left shadow-lg shadow-black/20 transition-transform hover:translate-y-[-1px] focus:ring-2 focus:outline-none {selectedId ===
-                  item.id
-                    ? 'ring-2 ring-[#7aa2f7]/80'
-                    : ''} {density === 'pin'
-                    ? 'flex items-center gap-2 bg-transparent px-2 !shadow-none'
-                    : ''} {density === 'micro'
-                    ? 'px-2 py-0.5'
-                    : ''} {density === 'compact'
-                    ? 'px-2 py-1'
-                    : ''} {density === 'normal' ? 'px-3 py-2' : ''}"
-                  style="{itemStyle(
-                    item,
-                  )} border-color: {category.color}; background: {item.kind ===
-                  'pin'
-                    ? 'transparent'
-                    : `linear-gradient(135deg, ${category.color}42, ${category.color}1a)`};"
-                  on:click={() => (selectedId = item.id)}
-                  on:pointermove={moveDrag}
-                  on:pointerup={endDrag}
-                  on:pointercancel={endDrag}
+            {#each displayedDays as day}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="border-border/80 relative border-r bg-[var(--timeline)]"
+                data-testid={`day-column-${day.weekday}`}
+                on:pointermove={(event) => updateHoverAdd(event, day.weekday)}
+                on:pointerleave={() => clearHoverAdd(day.weekday)}
+              >
+                {#each hourTicks() as tick}
+                  <div
+                    class="absolute right-0 left-0 border-t border-dashed border-white/[0.055]"
+                    style={tickStyle(tick)}
+                  ></div>
+                {/each}
+                <div
+                  class="absolute right-0 left-0 bg-sky-300/[0.055]"
+                  style={boundsStyle(
+                    day.bounds.wakeMinute - day.bounds.bufferBefore,
+                    day.bounds.wakeMinute,
+                  )}
                 >
-                  {#if item.kind === "block"}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <span
-                      class="absolute top-0 left-1/2 h-2 w-10 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize rounded-full border border-white/60 bg-white/80 {selectedId ===
-                      item.id
-                        ? ''
-                        : 'hidden'}"
-                      on:pointerdown={(event) =>
-                        beginDrag(event, item, "resize-start")}
-                    ></span>
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <span
-                      class="absolute bottom-0 left-1/2 h-2 w-10 -translate-x-1/2 translate-y-1/2 cursor-ns-resize rounded-full border border-white/60 bg-white/80 {selectedId ===
-                      item.id
-                        ? ''
-                        : 'hidden'}"
-                      on:pointerdown={(event) =>
-                        beginDrag(event, item, "resize-end")}
-                    ></span>
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <span
-                      class="absolute inset-0 cursor-grab"
-                      on:pointerdown={(event) => beginDrag(event, item, "move")}
-                    ></span>
-                    {#if density === "micro"}
+                  <span class="px-3 py-1 text-[10px] text-sky-200/60"
+                    >Buffer</span
+                  >
+                </div>
+                <div
+                  class="absolute right-0 left-0 bg-slate-300/[0.045]"
+                  style={boundsStyle(
+                    day.bounds.sleepMinute,
+                    day.bounds.sleepMinute + day.bounds.bufferAfter,
+                  )}
+                >
+                  <span class="px-3 py-1 text-[10px] text-slate-200/60"
+                    >Buffer</span
+                  >
+                </div>
+                <div
+                  class="absolute right-0 left-0 border-t border-sky-300/20 bg-sky-300/[0.035]"
+                  style={boundsStyle(
+                    day.bounds.wakeMinute,
+                    day.bounds.wakeMinute + 30,
+                  )}
+                >
+                  <span class="px-3 py-1 text-[10px] text-sky-100/55">Wake</span
+                  >
+                </div>
+                <div
+                  class="absolute right-0 left-0 border-t border-slate-200/15 bg-slate-300/[0.04]"
+                  style={boundsStyle(
+                    day.bounds.sleepMinute - 30,
+                    day.bounds.sleepMinute,
+                  )}
+                >
+                  <span class="px-3 py-1 text-[10px] text-slate-100/55"
+                    >Sleep</span
+                  >
+                </div>
+
+                {#if canShowHoverAdd(day) && hoverAdd}
+                  {@const add = hoverAdd}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="absolute right-3 left-3 z-20 flex -translate-y-1/2 items-center gap-2 rounded-md border border-[#7aa2f7]/45 bg-[#1a1b26]/95 px-2 py-1 shadow-xl shadow-black/25 backdrop-blur"
+                    style={hoverAddStyle(add.minute)}
+                    data-testid="hover-add-toolbar"
+                    on:pointerdown|stopPropagation
+                  >
+                    <span class="min-w-12 font-mono text-[11px] text-[#a9b1d6]"
+                      >{formatTime(add.minute)
+                        .replace(" AM", "")
+                        .replace(" PM", "")}</span
+                    >
+                    <button
+                      class="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded border border-[#bb9af7]/35 bg-[#bb9af7]/18 px-2 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/28"
+                      data-testid="hover-add-block"
+                      aria-label={`Add block at ${formatTime(add.minute)} on ${day.dateLabel}`}
+                      on:click|stopPropagation={() =>
+                        openCreate(
+                          "block",
+                          day.weekday,
+                          add.minute,
+                          HOVER_BLOCK_DURATION,
+                        )}
+                    >
+                      <Plus size={13} /> Block
+                    </button>
+                    <button
+                      class="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded border border-[#9ece6a]/30 bg-[#9ece6a]/16 px-2 text-[11px] font-semibold text-[#d3f6aa] hover:bg-[#9ece6a]/24"
+                      data-testid="hover-add-pin"
+                      aria-label={`Add pin at ${formatTime(add.minute)} on ${day.dateLabel}`}
+                      on:click|stopPropagation={() =>
+                        openCreate(
+                          "pin",
+                          day.weekday,
+                          add.minute,
+                          HOVER_BLOCK_DURATION,
+                        )}
+                    >
+                      <Plus size={13} /> Pin
+                    </button>
+                  </div>
+                {/if}
+
+                {#each day.items as item}
+                  {@const category = categoryById(item.categoryId)}
+                  {@const itemWarnings = warningsFor(item.id)}
+                  {@const density = itemDensity(item)}
+                  <button
+                    data-schedule-item
+                    data-testid="schedule-item"
+                    class="focus:ring-ring absolute right-3 left-3 z-10 overflow-hidden rounded-md border text-left shadow-lg shadow-black/20 transition-transform hover:translate-y-[-1px] focus:ring-2 focus:outline-none {selectedId ===
+                    item.id
+                      ? 'ring-2 ring-[#7aa2f7]/80'
+                      : ''} {density === 'pin'
+                      ? 'flex items-center gap-2 bg-transparent px-2 !shadow-none'
+                      : ''} {density === 'micro'
+                      ? 'px-2 py-0.5'
+                      : ''} {density === 'compact'
+                      ? 'px-2 py-1'
+                      : ''} {density === 'normal' ? 'px-3 py-2' : ''}"
+                    style="{itemStyle(
+                      item,
+                    )} border-color: {category.color}; background: {item.kind ===
+                    'pin'
+                      ? 'transparent'
+                      : `linear-gradient(135deg, ${category.color}42, ${category.color}1a)`};"
+                    on:click={() => (selectedId = item.id)}
+                    on:dblclick={() => openEdit(item)}
+                    on:pointermove={moveDrag}
+                    on:pointerup={endDrag}
+                    on:pointercancel={endDrag}
+                  >
+                    {#if item.kind === "block"}
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <span
-                        class="relative block truncate text-[11px] leading-[16px] font-semibold"
-                        title={`${item.title}: ${formatTime(item.startMinute)} - ${formatTime(item.endMinute ?? item.startMinute)}`}
-                      >
-                        {item.title}
-                      </span>
-                    {:else if density === "compact"}
+                        data-testid="resize-start-handle"
+                        class="absolute top-0 left-1/2 z-30 h-2 w-10 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize rounded-full border border-white/60 bg-white/80 {selectedId ===
+                        item.id
+                          ? ''
+                          : 'hidden'}"
+                        on:pointerdown={(event) =>
+                          beginDrag(event, item, "resize-start")}
+                      ></span>
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <span
-                        class="relative block truncate text-[11px] leading-[18px] font-semibold"
-                        title={`${item.title}: ${formatTime(item.startMinute)} - ${formatTime(item.endMinute ?? item.startMinute)}`}
-                      >
-                        {item.title}
-                        <span class="text-foreground/65 font-normal">
-                          · {formatTime(item.startMinute)
+                        data-testid="resize-end-handle"
+                        class="absolute bottom-0 left-1/2 z-30 h-2 w-10 -translate-x-1/2 translate-y-1/2 cursor-ns-resize rounded-full border border-white/60 bg-white/80 {selectedId ===
+                        item.id
+                          ? ''
+                          : 'hidden'}"
+                        on:pointerdown={(event) =>
+                          beginDrag(event, item, "resize-end")}
+                      ></span>
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <span
+                        class="absolute inset-0 z-10 cursor-grab"
+                        on:pointerdown={(event) =>
+                          beginDrag(event, item, "move")}
+                      ></span>
+                      {#if density === "micro"}
+                        <span
+                          class="relative block truncate text-[11px] leading-[16px] font-semibold"
+                          title={`${item.title}: ${formatTime(item.startMinute)} - ${formatTime(item.endMinute ?? item.startMinute)}`}
+                        >
+                          {item.title}
+                        </span>
+                      {:else if density === "compact"}
+                        <span
+                          class="relative block truncate text-[11px] leading-[18px] font-semibold"
+                          title={`${item.title}: ${formatTime(item.startMinute)} - ${formatTime(item.endMinute ?? item.startMinute)}`}
+                        >
+                          {item.title}
+                          <span class="text-foreground/65 font-normal">
+                            · {formatTime(item.startMinute)
+                              .replace(" AM", "")
+                              .replace(" PM", "")} - {formatTime(
+                              item.endMinute ?? item.startMinute,
+                            )
+                              .replace(" AM", "")
+                              .replace(" PM", "")}
+                          </span>
+                        </span>
+                      {:else}
+                        <span
+                          class="relative block truncate text-[12px] leading-[17px] font-semibold"
+                          >{item.title}</span
+                        >
+                        <span
+                          class="text-foreground/70 relative mt-0.5 block truncate text-[11px] leading-[14px]"
+                        >
+                          {formatTime(item.startMinute)
                             .replace(" AM", "")
                             .replace(" PM", "")} - {formatTime(
                             item.endMinute ?? item.startMinute,
@@ -783,49 +980,230 @@
                             .replace(" AM", "")
                             .replace(" PM", "")}
                         </span>
-                      </span>
+                      {/if}
+                      {#if itemWarnings.length}
+                        <span
+                          class="relative mt-1 inline-flex rounded bg-red-500/80 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                          >Overlap</span
+                        >
+                      {/if}
                     {:else}
                       <span
-                        class="relative block truncate text-[12px] leading-[17px] font-semibold"
+                        class="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style="background:{category.color}"
+                      ></span>
+                      <span class="text-foreground/75 truncate text-[11px]"
                         >{item.title}</span
                       >
                       <span
-                        class="text-foreground/70 relative mt-0.5 block truncate text-[11px] leading-[14px]"
+                        class="border-muted-foreground/60 ml-auto flex h-3.5 w-3.5 items-center justify-center rounded border text-[9px]"
                       >
-                        {formatTime(item.startMinute)
-                          .replace(" AM", "")
-                          .replace(" PM", "")} - {formatTime(
-                          item.endMinute ?? item.startMinute,
-                        )
-                          .replace(" AM", "")
-                          .replace(" PM", "")}
+                        {#if item.completed}<Check size={10} />{/if}
                       </span>
                     {/if}
-                    {#if itemWarnings.length}
-                      <span
-                        class="relative mt-1 inline-flex rounded bg-red-500/80 px-1.5 py-0.5 text-[10px] font-semibold text-white"
-                        >Overlap</span
-                      >
-                    {/if}
-                  {:else}
-                    <span
-                      class="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style="background:{category.color}"
-                    ></span>
-                    <span class="text-foreground/75 truncate text-[11px]"
-                      >{item.title}</span
-                    >
-                    <span
-                      class="border-muted-foreground/60 ml-auto flex h-3.5 w-3.5 items-center justify-center rounded border text-[9px]"
-                    >
-                      {#if item.completed}<Check size={10} />{/if}
-                    </span>
-                  {/if}
-                </button>
-              {/each}
+                  </button>
+                {/each}
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div
+            class="relative min-h-full"
+            style="width:{HORIZONTAL_LABEL_WIDTH +
+              horizontalTimelineWidth}px; min-width: 100%;"
+          >
+            <div
+              class="border-border bg-surface/80 sticky top-0 z-30 h-11 border-b"
+            >
+              <div
+                class="text-muted-foreground absolute top-0 bottom-0 left-0 flex items-center px-4 text-[12px]"
+                style="width:{HORIZONTAL_LABEL_WIDTH}px;"
+              >
+                All times
+              </div>
+              <div
+                class="absolute top-0 bottom-0"
+                style="left:{HORIZONTAL_LABEL_WIDTH}px;width:{horizontalTimelineWidth}px;"
+              >
+                {#each hourTicks() as tick}
+                  <div
+                    class="text-muted-foreground absolute top-0 bottom-0 border-l border-dashed border-white/[0.06] px-2 pt-3 text-[11px]"
+                    style={horizontalHoverStyle(tick)}
+                  >
+                    {formatTime(tick).replace(":00", "")}
+                  </div>
+                {/each}
+              </div>
             </div>
-          {/each}
-        </div>
+
+            {#each displayedDays as day}
+              <div
+                class="border-border relative border-b"
+                style="height:{HORIZONTAL_ROW_HEIGHT}px;"
+              >
+                <button
+                  class="bg-surface-2/70 border-border absolute top-0 bottom-0 left-0 z-20 border-r px-3 text-left"
+                  style="width:{HORIZONTAL_LABEL_WIDTH}px;"
+                  on:click={() => (visibleDay = day.weekday)}
+                >
+                  <div class="text-[13px] font-semibold">{day.dateLabel}</div>
+                  <div class="text-muted-foreground mt-1 text-[10px]">
+                    {day.dayName}
+                  </div>
+                </button>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="absolute top-0 bottom-0 bg-[var(--timeline)]"
+                  style="left:{HORIZONTAL_LABEL_WIDTH}px;width:{horizontalTimelineWidth}px;"
+                  data-testid={`horizontal-day-${day.weekday}`}
+                  on:pointermove={(event) =>
+                    updateHoverAdd(event, day.weekday, "horizontal")}
+                  on:pointerleave={() => clearHoverAdd(day.weekday)}
+                >
+                  {#each hourTicks() as tick}
+                    <div
+                      class="absolute top-0 bottom-0 border-l border-dashed border-white/[0.055]"
+                      style={horizontalHoverStyle(tick)}
+                    ></div>
+                  {/each}
+                  <div
+                    class="absolute top-0 bottom-0 bg-sky-300/[0.055]"
+                    style="left:{((day.bounds.wakeMinute -
+                      day.bounds.bufferBefore -
+                      maxStart) /
+                      60) *
+                      hourHeight}px;width:{(day.bounds.bufferBefore / 60) *
+                      hourHeight}px;"
+                  ></div>
+                  <div
+                    class="absolute top-0 bottom-0 bg-slate-300/[0.045]"
+                    style="left:{((day.bounds.sleepMinute - maxStart) / 60) *
+                      hourHeight}px;width:{(day.bounds.bufferAfter / 60) *
+                      hourHeight}px;"
+                  ></div>
+
+                  {#if canShowHoverAdd(day) && hoverAdd}
+                    {@const add = hoverAdd}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div
+                      class="absolute top-4 z-20 flex -translate-x-1/2 items-center gap-2 rounded-md border border-[#7aa2f7]/45 bg-[#1a1b26]/95 px-2 py-1 shadow-xl shadow-black/25 backdrop-blur"
+                      style={horizontalHoverStyle(add.minute)}
+                      data-testid="hover-add-toolbar"
+                      on:pointerdown|stopPropagation
+                    >
+                      <span class="font-mono text-[11px] text-[#a9b1d6]"
+                        >{formatTime(add.minute)
+                          .replace(" AM", "")
+                          .replace(" PM", "")}</span
+                      >
+                      <button
+                        class="inline-flex h-7 items-center gap-1 rounded border border-[#bb9af7]/35 bg-[#bb9af7]/18 px-2 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/28"
+                        data-testid="hover-add-block"
+                        on:click|stopPropagation={() =>
+                          openCreate(
+                            "block",
+                            day.weekday,
+                            add.minute,
+                            HOVER_BLOCK_DURATION,
+                          )}
+                      >
+                        <Plus size={13} /> Block
+                      </button>
+                      <button
+                        class="inline-flex h-7 items-center gap-1 rounded border border-[#9ece6a]/30 bg-[#9ece6a]/16 px-2 text-[11px] font-semibold text-[#d3f6aa] hover:bg-[#9ece6a]/24"
+                        data-testid="hover-add-pin"
+                        on:click|stopPropagation={() =>
+                          openCreate(
+                            "pin",
+                            day.weekday,
+                            add.minute,
+                            HOVER_BLOCK_DURATION,
+                          )}
+                      >
+                        <Plus size={13} /> Pin
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#each day.items as item}
+                    {@const category = categoryById(item.categoryId)}
+                    <button
+                      data-schedule-item
+                      data-testid="schedule-item"
+                      class="focus:ring-ring absolute top-6 bottom-3 z-10 overflow-hidden rounded-md border px-3 text-left shadow-lg shadow-black/20 hover:translate-y-[-1px] focus:ring-2 focus:outline-none {selectedId ===
+                      item.id
+                        ? 'ring-2 ring-[#7aa2f7]/80'
+                        : ''} {item.kind === 'pin'
+                        ? 'flex max-w-32 items-center gap-2 bg-transparent px-2 !shadow-none'
+                        : ''}"
+                      style="{horizontalItemStyle(
+                        item,
+                      )} border-color: {category.color}; background: {item.kind ===
+                      'pin'
+                        ? 'transparent'
+                        : `linear-gradient(135deg, ${category.color}42, ${category.color}1a)`};"
+                      on:click={() => (selectedId = item.id)}
+                      on:dblclick={() => openEdit(item)}
+                      on:pointermove={moveDrag}
+                      on:pointerup={endDrag}
+                      on:pointercancel={endDrag}
+                    >
+                      {#if item.kind === "block"}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span
+                          data-testid="resize-start-handle"
+                          class="absolute top-1/2 left-0 z-30 h-9 w-2 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/60 bg-white/80"
+                          on:pointerdown={(event) =>
+                            beginDrag(
+                              event,
+                              item,
+                              "resize-start",
+                              "horizontal",
+                            )}
+                        ></span>
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span
+                          data-testid="resize-end-handle"
+                          class="absolute top-1/2 right-0 z-30 h-9 w-2 translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/60 bg-white/80"
+                          on:pointerdown={(event) =>
+                            beginDrag(event, item, "resize-end", "horizontal")}
+                        ></span>
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span
+                          class="absolute inset-0 z-10 cursor-grab"
+                          on:pointerdown={(event) =>
+                            beginDrag(event, item, "move", "horizontal")}
+                        ></span>
+                        <span
+                          class="relative z-20 block truncate text-[12px] font-semibold"
+                        >
+                          {item.title}
+                        </span>
+                        <span
+                          class="text-foreground/70 relative z-20 mt-0.5 block truncate text-[11px]"
+                        >
+                          {formatTime(item.startMinute)
+                            .replace(" AM", "")
+                            .replace(" PM", "")} - {formatTime(
+                            item.endMinute ?? item.startMinute,
+                          )
+                            .replace(" AM", "")
+                            .replace(" PM", "")}
+                        </span>
+                      {:else}
+                        <span
+                          class="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style="background:{category.color}"
+                        ></span>
+                        <span class="truncate text-[11px]">{item.title}</span>
+                      {/if}
+                    </button>
+                  {/each}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
     </section>
 
@@ -1122,6 +1500,12 @@
 
             <div class="flex gap-2 pt-2">
               <button
+                class="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-md border px-3 py-2"
+                on:click={() => openEdit(selected)}
+              >
+                Edit
+              </button>
+              <button
                 class="flex items-center gap-1 rounded-md border border-red-400/30 px-3 py-2 text-red-300 hover:bg-red-500/10"
                 on:click={deleteSelected}
               >
@@ -1190,10 +1574,11 @@
     role="dialog"
     aria-modal="true"
     aria-label="Add schedule item"
-    class="border-border bg-surface fixed top-1/2 left-1/2 z-50 w-[420px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-lg border p-5 shadow-2xl"
+    class="border-border bg-surface fixed inset-4 z-50 overflow-y-auto rounded-lg border p-5 shadow-2xl md:top-1/2 md:bottom-auto md:left-1/2 md:w-[460px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2"
   >
     <h2 class="text-[15px] font-semibold">
-      Add {dialogKind === "pin" ? "pin" : "block"}
+      {editorMode === "edit" ? "Edit" : "Add"}
+      {dialogKind === "pin" ? "pin" : "block"}
     </h2>
     <div class="mt-4 space-y-3 text-[12px]">
       <label class="block">
@@ -1216,23 +1601,21 @@
           </select>
         </label>
         <label class="block">
-          <span class="text-muted-foreground mb-1 block">Start minute</span>
+          <span class="text-muted-foreground mb-1 block">Start time</span>
           <input
             class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-            type="number"
-            step={SNAP_MINUTES}
-            bind:value={draft.startMinute}
+            placeholder="4:25 AM"
+            bind:value={draftStartTime}
           />
         </label>
       </div>
       {#if dialogKind === "block"}
         <label class="block">
-          <span class="text-muted-foreground mb-1 block">End minute</span>
+          <span class="text-muted-foreground mb-1 block">End time</span>
           <input
             class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-            type="number"
-            step={SNAP_MINUTES}
-            bind:value={draft.endMinute}
+            placeholder="5:15 AM"
+            bind:value={draftEndTime}
           />
         </label>
       {/if}
@@ -1247,16 +1630,113 @@
           {/each}
         </select>
       </label>
+      <label class="block">
+        <span class="text-muted-foreground mb-1 block">Notes</span>
+        <textarea
+          class="border-border bg-muted/30 min-h-20 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
+          bind:value={draft.notes}
+        ></textarea>
+      </label>
+      {#if dialogKind === "pin"}
+        <label class="text-muted-foreground flex items-center gap-2">
+          <input type="checkbox" bind:checked={draft.completed} />
+          Completed
+        </label>
+      {/if}
+      {#if editorError}
+        <div
+          class="rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-red-200"
+        >
+          {editorError}
+        </div>
+      {/if}
     </div>
-    <div class="mt-5 flex justify-end gap-2">
+    <div class="mt-5 flex flex-wrap justify-end gap-2">
+      {#if editorMode === "edit"}
+        <button
+          class="mr-auto rounded-md border border-red-400/30 px-3 py-2 text-[12px] text-red-300 hover:bg-red-500/10"
+          on:click={deleteEditingItem}
+        >
+          Delete
+        </button>
+        <button
+          class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
+          on:click={duplicateSelected}
+        >
+          Duplicate
+        </button>
+      {/if}
       <button
         class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
         on:click={() => (dialogOpen = false)}>Cancel</button
       >
       <button
         class="rounded-md bg-[#7aa2f7] px-3 py-2 text-[12px] font-semibold text-[#101014] hover:bg-[#9eceff]"
-        on:click={createItem}>Create</button
+        on:click={saveItem}>{editorMode === "edit" ? "Save" : "Create"}</button
       >
+    </div>
+  </div>
+{/if}
+
+{#if settingsOpen}
+  <button
+    type="button"
+    class="fixed inset-0 z-40 bg-black/50"
+    aria-label="Close settings"
+    on:click={() => (settingsOpen = false)}
+  ></button>
+  <div
+    role="dialog"
+    aria-modal="true"
+    aria-label="Settings"
+    class="border-border bg-surface fixed inset-4 z-50 overflow-hidden rounded-lg border shadow-2xl md:top-1/2 md:bottom-auto md:left-1/2 md:w-[620px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2"
+  >
+    <div class="border-border flex items-center justify-between border-b p-4">
+      <h2 class="text-[15px] font-semibold">Settings</h2>
+      <button
+        class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
+        on:click={() => (settingsOpen = false)}
+      >
+        <X size={15} />
+      </button>
+    </div>
+    <div class="max-h-[calc(82vh-58px)] overflow-y-auto p-4">
+      <div class="mb-3 flex items-center justify-between">
+        <div>
+          <div class="text-[13px] font-semibold">Theme</div>
+          <div class="text-muted-foreground text-[11px]">
+            Built-in editor-inspired light and dark palettes.
+          </div>
+        </div>
+        <span class="text-muted-foreground text-[11px]"
+          >{themeById(themeId).name}</span
+        >
+      </div>
+      <div class="grid grid-cols-2 gap-2 md:grid-cols-3">
+        {#each APP_THEMES as theme}
+          <button
+            class="border-border hover:bg-muted/60 rounded-md border p-2 text-left {theme.id ===
+            themeId
+              ? 'ring-ring bg-muted/70 ring-2'
+              : 'bg-muted/20'}"
+            data-testid={`theme-${theme.id}`}
+            on:click={() => (themeId = theme.id)}
+          >
+            <div class="mb-2 flex gap-1">
+              {#each theme.palette as color}
+                <span
+                  class="h-4 flex-1 rounded-sm border border-black/10"
+                  style="background:{color}"
+                ></span>
+              {/each}
+            </div>
+            <div class="truncate text-[12px] font-semibold">{theme.name}</div>
+            <div class="text-muted-foreground text-[10px] capitalize">
+              {theme.mode}
+            </div>
+          </button>
+        {/each}
+      </div>
     </div>
   </div>
 {/if}
