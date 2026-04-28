@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
+  import { Tooltip } from "bits-ui";
   import { untrack } from "svelte";
   import {
     CalendarDays,
@@ -541,7 +542,19 @@
 
   <footer class="flex h-10 shrink-0 items-center gap-5 border-t border-border bg-surface px-4 text-[12px] text-muted-foreground">
     <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#9ece6a]"></span>Local only</span>
-    <span class="inline-flex items-center gap-2"><Database size={14} />SQLite</span>
+    <Tooltip.Provider delayDuration={250}>
+      <Tooltip.Root>
+        <Tooltip.Trigger class="inline-flex items-center gap-2 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+          <Database size={14} />SQLite
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content side="top" class="z-50 rounded-md border border-border bg-popover px-3 py-2 text-[12px] text-popover-foreground shadow-xl">
+            Runtime data stays in ignored local SQLite files.
+            <Tooltip.Arrow class="fill-popover" />
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
     <span class="mx-auto">15-minute grid</span>
     <span>All data is stored locally on this device.</span>
   </footer>
