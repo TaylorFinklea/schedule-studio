@@ -5,6 +5,7 @@
   import {
     CalendarDays,
     Check,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
     Clock3,
@@ -41,14 +42,16 @@
 
   const DEFAULT_HOUR_HEIGHT = 128;
   const MIN_HOUR_HEIGHT = 72;
-  const MAX_HOUR_HEIGHT = 360;
+  const MAX_HOUR_HEIGHT = 720;
   const ZOOM_STEP = 8;
   const PIN_HEIGHT = 28;
   const MIN_BLOCK_HEIGHT = 16;
   const DEFAULT_BLOCK_DURATION = 60;
   const HOVER_BLOCK_DURATION = 30;
   const HORIZONTAL_LABEL_WIDTH = 96;
-  const HORIZONTAL_ROW_HEIGHT = 88;
+  const HORIZONTAL_ROW_HEIGHT = 112;
+  const HORIZONTAL_PIN_LANE_HEIGHT = 30;
+  const HOVER_TOOLBAR_WIDTH = 252;
 
   // svelte-ignore state_referenced_locally -- local planner state is resynced from loader data below after mutations.
   let week = $state<WeekView>(data.week);
@@ -66,7 +69,10 @@
   let newVersionName = $state("");
   let hourHeight = $state(DEFAULT_HOUR_HEIGHT);
   let layoutMode = $state<"vertical" | "horizontal">("vertical");
-  let settingsOpen = $state(false);
+  let sidebarPanel = $state<"overview" | "editor" | "settings">("overview");
+  let versionsCollapsed = $state(false);
+  let categoriesCollapsed = $state(false);
+  let dailyTotalsCollapsed = $state(false);
   let themeId = $state(DEFAULT_THEME_ID);
   let hoverAdd = $state<{ weekday: Weekday; minute: number } | null>(null);
   let dragging = $state<{
@@ -206,6 +212,7 @@
     editorError = "";
     hoverAdd = null;
     dialogOpen = true;
+    sidebarPanel = "editor";
   }
 
   function openEdit(item: ScheduleItem) {
@@ -228,6 +235,7 @@
     editorError = "";
     selectedId = item.id;
     dialogOpen = true;
+    sidebarPanel = "editor";
   }
 
   function draftForSave() {
@@ -272,6 +280,7 @@
       body: JSON.stringify(payload),
     }).then((response) => response.json());
     dialogOpen = false;
+    sidebarPanel = "overview";
     selectedId = item.id ?? selectedId;
     await invalidateAll();
   }
@@ -280,6 +289,7 @@
     if (!editingId) return;
     await fetch(`/api/items/${editingId}`, { method: "DELETE" });
     dialogOpen = false;
+    sidebarPanel = "overview";
     selectedId = null;
     await invalidateAll();
   }
@@ -393,7 +403,8 @@
   }
 
   function openSettings() {
-    settingsOpen = true;
+    sidebarPanel = sidebarPanel === "settings" ? "overview" : "settings";
+    dialogOpen = false;
   }
 
   function zoomPercent() {
@@ -566,7 +577,7 @@
   function horizontalItemStyle(item: ScheduleItem) {
     const left = ((item.startMinute - maxStart) / 60) * hourHeight;
     if (item.kind === "pin") {
-      return `left:${left}px;width:28px;`;
+      return `left:${left}px;width:148px;`;
     }
     const width = Math.max(
       MIN_BLOCK_HEIGHT * 2,
@@ -580,6 +591,19 @@
 
   function horizontalHoverStyle(minute: number) {
     return `left:${((minute - maxStart) / 60) * hourHeight}px;`;
+  }
+
+  function horizontalHoverToolbarStyle(minute: number) {
+    const left = ((minute - maxStart) / 60) * hourHeight;
+    const clamped = Math.max(
+      8,
+      Math.min(left - HOVER_TOOLBAR_WIDTH / 2, horizontalTimelineWidth - HOVER_TOOLBAR_WIDTH - 8),
+    );
+    return `left:${clamped}px;width:${HOVER_TOOLBAR_WIDTH}px;`;
+  }
+
+  function selectedDayLabel(weekday: Weekday) {
+    return week.days.find((day) => day.weekday === weekday)?.dateLabel ?? "";
   }
 
   function dateRangeLabel() {
@@ -718,50 +742,59 @@
       </label>
       <button
         class="border-border bg-muted/30 text-muted-foreground hover:text-foreground rounded-md border p-2"
-        title="Grid"><Grid2X2 size={16} /></button
+        title="Overview"
+        aria-label="Overview"
+        on:click={() => {
+          dialogOpen = false;
+          sidebarPanel = "overview";
+        }}><Grid2X2 size={16} /></button
       >
       <button
         class="border-border bg-muted/30 text-muted-foreground hover:text-foreground rounded-md border p-2"
-        title="More"><MoreVertical size={16} /></button
+        title="More settings"
+        aria-label="More settings"
+        on:click={openSettings}><MoreVertical size={16} /></button
       >
     </div>
   </header>
 
   <main class="flex min-h-0 flex-1">
     <section class="flex min-w-0 flex-1 flex-col">
-      <div
-        class="border-border bg-surface-2/70 grid h-10 shrink-0 border-b"
-        style="grid-template-columns: 80px repeat({displayedDays.length}, minmax(150px, 1fr));"
-      >
-        <div class="text-muted-foreground flex items-center px-4 text-[12px]">
-          All times
+      {#if layoutMode === "vertical"}
+        <div
+          class="border-border bg-surface-2/70 grid h-10 shrink-0 border-b"
+          style="grid-template-columns: 80px repeat({displayedDays.length}, minmax(150px, 1fr));"
+        >
+          <div class="text-muted-foreground flex items-center px-4 text-[12px]">
+            All times
+          </div>
+          {#each displayedDays as day}
+            <button
+              class="border-border hover:bg-muted/30 border-l px-3 text-left transition-colors {day.weekday ===
+              visibleDay
+                ? 'text-[#bb9af7]'
+                : ''}"
+              on:click={() => (visibleDay = day.weekday)}
+            >
+              <div class="text-[14px] font-semibold">{day.dateLabel}</div>
+              <div class="text-muted-foreground mt-0.5 flex gap-4 text-[10px]">
+                <span
+                  >Wake {formatTime(day.bounds.wakeMinute).replace(
+                    ":00 ",
+                    " ",
+                  )}</span
+                >
+                <span
+                  >Sleep {formatTime(day.bounds.sleepMinute).replace(
+                    ":00 ",
+                    " ",
+                  )}</span
+                >
+              </div>
+            </button>
+          {/each}
         </div>
-        {#each displayedDays as day}
-          <button
-            class="border-border hover:bg-muted/30 border-l px-3 text-left transition-colors {day.weekday ===
-            visibleDay
-              ? 'text-[#bb9af7]'
-              : ''}"
-            on:click={() => (visibleDay = day.weekday)}
-          >
-            <div class="text-[14px] font-semibold">{day.dateLabel}</div>
-            <div class="text-muted-foreground mt-0.5 flex gap-4 text-[10px]">
-              <span
-                >Wake {formatTime(day.bounds.wakeMinute).replace(
-                  ":00 ",
-                  " ",
-                )}</span
-              >
-              <span
-                >Sleep {formatTime(day.bounds.sleepMinute).replace(
-                  ":00 ",
-                  " ",
-                )}</span
-              >
-            </div>
-          </button>
-        {/each}
-      </div>
+      {/if}
 
       <div class="relative min-h-0 flex-1 overflow-auto">
         {#if layoutMode === "vertical"}
@@ -908,7 +941,7 @@
                     'pin'
                       ? 'transparent'
                       : `linear-gradient(135deg, ${category.color}42, ${category.color}1a)`};"
-                    on:click={() => (selectedId = item.id)}
+                    on:click={() => openEdit(item)}
                     on:dblclick={() => openEdit(item)}
                     on:pointermove={moveDrag}
                     on:pointerup={endDrag}
@@ -1086,8 +1119,8 @@
                     {@const add = hoverAdd}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
-                      class="absolute top-4 z-20 flex -translate-x-1/2 items-center gap-2 rounded-md border border-[#7aa2f7]/45 bg-[#1a1b26]/95 px-2 py-1 shadow-xl shadow-black/25 backdrop-blur"
-                      style={horizontalHoverStyle(add.minute)}
+                      class="absolute top-1 z-50 flex items-center gap-1.5 rounded-md border border-[#7aa2f7]/45 bg-[#1a1b26]/95 px-2 py-1 shadow-xl shadow-black/25 backdrop-blur"
+                      style={horizontalHoverToolbarStyle(add.minute)}
                       data-testid="hover-add-toolbar"
                       on:pointerdown|stopPropagation
                     >
@@ -1097,7 +1130,7 @@
                           .replace(" PM", "")}</span
                       >
                       <button
-                        class="inline-flex h-7 items-center gap-1 rounded border border-[#bb9af7]/35 bg-[#bb9af7]/18 px-2 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/28"
+                        class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-[#bb9af7]/35 bg-[#bb9af7]/18 px-2 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/28"
                         data-testid="hover-add-block"
                         on:click|stopPropagation={() =>
                           openCreate(
@@ -1110,7 +1143,7 @@
                         <Plus size={13} /> Block
                       </button>
                       <button
-                        class="inline-flex h-7 items-center gap-1 rounded border border-[#9ece6a]/30 bg-[#9ece6a]/16 px-2 text-[11px] font-semibold text-[#d3f6aa] hover:bg-[#9ece6a]/24"
+                        class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-[#9ece6a]/30 bg-[#9ece6a]/16 px-2 text-[11px] font-semibold text-[#d3f6aa] hover:bg-[#9ece6a]/24"
                         data-testid="hover-add-pin"
                         on:click|stopPropagation={() =>
                           openCreate(
@@ -1130,19 +1163,19 @@
                     <button
                       data-schedule-item
                       data-testid="schedule-item"
-                      class="focus:ring-ring absolute top-6 bottom-3 z-10 overflow-hidden rounded-md border px-3 text-left shadow-lg shadow-black/20 hover:translate-y-[-1px] focus:ring-2 focus:outline-none {selectedId ===
+                      class="focus:ring-ring absolute z-10 overflow-hidden rounded-md border text-left shadow-lg shadow-black/20 hover:translate-y-[-1px] focus:ring-2 focus:outline-none {selectedId ===
                       item.id
                         ? 'ring-2 ring-[#7aa2f7]/80'
                         : ''} {item.kind === 'pin'
-                        ? 'flex max-w-32 items-center gap-2 bg-transparent px-2 !shadow-none'
-                        : ''}"
+                        ? 'top-1 flex h-7 max-w-40 items-center gap-1.5 border-transparent bg-transparent px-1.5 !shadow-none'
+                        : 'top-10 bottom-3 px-3'}"
                       style="{horizontalItemStyle(
                         item,
                       )} border-color: {category.color}; background: {item.kind ===
                       'pin'
                         ? 'transparent'
                         : `linear-gradient(135deg, ${category.color}42, ${category.color}1a)`};"
-                      on:click={() => (selectedId = item.id)}
+                      on:click={() => openEdit(item)}
                       on:dblclick={() => openEdit(item)}
                       on:pointermove={moveDrag}
                       on:pointerup={endDrag}
@@ -1195,7 +1228,14 @@
                           class="h-2.5 w-2.5 shrink-0 rounded-full"
                           style="background:{category.color}"
                         ></span>
-                        <span class="truncate text-[11px]">{item.title}</span>
+                        <span
+                          class="absolute top-3 left-3 h-5 border-l-2"
+                          style="border-color:{category.color}"
+                        ></span>
+                        <span
+                          class="bg-background text-foreground relative rounded px-1.5 py-0.5 text-[10px] font-medium shadow-sm"
+                          >{item.title}</span
+                        >
                       {/if}
                     </button>
                   {/each}
@@ -1208,329 +1248,416 @@
     </section>
 
     <aside
-      class="border-border bg-surface flex w-[286px] shrink-0 flex-col border-l"
+      class="border-border bg-surface flex w-[320px] shrink-0 flex-col border-l"
     >
-      <section class="border-border border-b p-4">
-        <div class="mb-3 flex items-center justify-between">
-          <h2 class="text-[13px] font-semibold">Schedule versions</h2>
-          <span
-            class="rounded border border-[#7aa2f7]/30 px-1.5 py-0.5 text-[10px] text-[#a9c3ff]"
-            >Active</span
-          >
-        </div>
-        <div class="mb-3 space-y-1">
-          {#each week.versions as version}
-            <button
-              class="flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-[12px] {version.isActive
-                ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/14 text-[#c0caf5]'
-                : 'hover:bg-muted/45 border-transparent'}"
-              on:click={() => activateVersion(version.id)}
-              title={version.isDefault
-                ? "Default schedule"
-                : "Sandbox schedule"}
-            >
-              <span
-                class="h-2.5 w-2.5 rounded-full {version.isDefault
-                  ? 'bg-[#9ece6a]'
-                  : 'bg-[#bb9af7]'}"
-              ></span>
-              <span class="min-w-0 flex-1">
-                <span class="block truncate">{version.name}</span>
-                <span class="text-muted-foreground block font-mono text-[10px]"
-                  >{formatDuration(version.totalMinutes)} · {version.itemCount} items</span
-                >
-              </span>
-            </button>
-          {/each}
-        </div>
-        <input
-          class="border-border bg-muted/30 mb-2 w-full rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
-          placeholder="Sandbox name"
-          bind:value={newVersionName}
-        />
-        <div class="grid grid-cols-2 gap-2">
-          <button
-            class="rounded-md border border-[#bb9af7]/35 bg-[#bb9af7]/14 px-2 py-1.5 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/24"
-            on:click={createSandboxVersion}
-          >
-            Copy sandbox
-          </button>
-          <button
-            class="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-md border px-2 py-1.5 text-[11px]"
-            on:click={renameActiveVersion}
-          >
-            Rename
-          </button>
-        </div>
-        {#if week.templateId !== week.defaultTemplateId}
-          <button
-            class="mt-2 w-full rounded-md border border-red-400/25 px-2 py-1.5 text-[11px] text-red-300 hover:bg-red-500/10"
-            on:click={deleteCurrentSandbox}
-          >
-            Delete current sandbox
-          </button>
-        {/if}
-      </section>
-
-      <section class="border-border border-b p-4">
-        <div class="mb-3 flex items-center justify-between">
-          <h2 class="text-[13px] font-semibold">Categories</h2>
-          <button class="text-[11px] text-violet-300 hover:text-violet-200"
-            >Edit</button
-          >
-        </div>
-        <div
-          class="text-muted-foreground mb-2 text-[10px] font-semibold tracking-[0.12em] uppercase"
+      <div class="border-border flex shrink-0 items-center gap-1 border-b p-2 text-[11px]">
+        <button
+          class="flex-1 rounded px-2 py-1.5 {sidebarPanel === 'overview'
+            ? 'bg-muted text-foreground'
+            : 'text-muted-foreground hover:bg-muted/60'}"
+          on:click={() => {
+            sidebarPanel = "overview";
+            dialogOpen = false;
+          }}
         >
-          Weekly totals
-        </div>
-        <div class="space-y-2">
-          {#each week.categories as category}
-            {@const total =
-              week.weeklyTotals.find((row) => row.categoryId === category.id)
-                ?.minutes ?? 0}
-            <div class="flex items-center gap-2 text-[12px]">
-              <span
-                class="h-3 w-3 rounded-full"
-                style="background:{category.color}"
-              ></span>
-              <span class="flex-1">{category.name}</span>
-              <span class="text-muted-foreground font-mono text-[11px]"
-                >{formatDuration(total)}</span
+          Overview
+        </button>
+        <button
+          class="flex-1 rounded px-2 py-1.5 {sidebarPanel === 'editor'
+            ? 'bg-muted text-foreground'
+            : 'text-muted-foreground hover:bg-muted/60'}"
+          on:click={() =>
+            selected ? openEdit(selected) : openCreate("block", visibleDay)}
+        >
+          Editor
+        </button>
+        <button
+          class="flex-1 rounded px-2 py-1.5 {sidebarPanel === 'settings'
+            ? 'bg-muted text-foreground'
+            : 'text-muted-foreground hover:bg-muted/60'}"
+          on:click={openSettings}
+        >
+          Settings
+        </button>
+      </div>
+
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        {#if sidebarPanel === "settings"}
+          <section class="p-4">
+            <div class="mb-4 flex items-center justify-between">
+              <h2 class="text-[14px] font-semibold">Settings</h2>
+              <span class="text-muted-foreground text-[11px]"
+                >{themeById(themeId).name}</span
               >
             </div>
-          {/each}
-        </div>
-        <div
-          class="border-border mt-3 flex items-center justify-between border-t pt-3 text-[12px]"
-        >
-          <span>Total</span>
-          <span class="text-muted-foreground font-mono"
-            >{formatDuration(
-              week.weeklyTotals.reduce((sum, row) => sum + row.minutes, 0),
-            )}</span
-          >
-        </div>
-      </section>
-
-      <section class="border-border border-b p-4">
-        <h2 class="mb-3 text-[13px] font-semibold">Daily totals</h2>
-        <div class="space-y-1">
-          {#each week.dailyTotals as total}
-            <button
-              class="hover:bg-muted/50 flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[12px] {visibleDay ===
-              total.weekday
-                ? 'border border-[#7aa2f7]/60 bg-[#7aa2f7]/16 text-[#c0caf5]'
-                : 'border border-transparent'}"
-              on:click={() => {
-                visibleDay = total.weekday;
-                dayFocus = true;
-              }}
-            >
-              <span>{week.days[total.weekday - 1].dayName}</span>
-              <span class="text-muted-foreground font-mono text-[11px]"
-                >{formatDuration(total.minutes)}</span
-              >
-            </button>
-          {/each}
-        </div>
-      </section>
-
-      <section class="min-h-0 flex-1 overflow-y-auto p-4">
-        {#if selected && selectedCategory}
-          <div class="mb-4 flex items-center gap-2">
-            <span
-              class="h-3 w-3 rounded-full"
-              style="background:{selectedCategory.color}"
-            ></span>
-            <h2 class="flex-1 text-[14px] font-semibold">{selected.title}</h2>
-            <button
-              class="border-border text-muted-foreground hover:text-foreground rounded border p-1"
-              on:click={() => (selectedId = null)}><X size={14} /></button
-            >
-          </div>
-
-          <div class="border-border mb-4 flex border-b text-[12px]">
-            <button class="border-b border-[#7aa2f7] px-4 py-2 text-[#7aa2f7]"
-              >Details</button
-            >
-            <button class="text-muted-foreground px-4 py-2">Notes</button>
-          </div>
-
-          <div class="space-y-3 text-[12px]">
-            <label class="block">
-              <span class="text-muted-foreground mb-1 block">Title</span>
-              <input
-                class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
-                value={selected.title}
-                on:input={(event) =>
-                  updateLocalItem(selected.id, {
-                    title: event.currentTarget.value,
-                  })}
-                on:blur={() => persistItem(selected)}
-              />
-            </label>
-            <label class="block">
-              <span class="text-muted-foreground mb-1 block">Day</span>
-              <select
-                class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
-                value={selected.weekday}
-                on:change={(event) => {
-                  updateLocalItem(selected.id, {
-                    weekday: Number(event.currentTarget.value) as Weekday,
-                  });
-                  persistItem({
-                    ...selected,
-                    weekday: Number(event.currentTarget.value) as Weekday,
-                  });
+            <div class="mb-3 text-[12px] font-semibold">Theme</div>
+            <div class="grid grid-cols-2 gap-2">
+              {#each APP_THEMES as theme}
+                <button
+                  class="border-border hover:bg-muted/60 rounded-md border p-2 text-left {theme.id ===
+                  themeId
+                    ? 'ring-ring bg-muted/70 ring-2'
+                    : 'bg-muted/20'}"
+                  data-testid={`theme-${theme.id}`}
+                  on:click={() => (themeId = theme.id)}
+                >
+                  <div class="mb-2 flex gap-1">
+                    {#each theme.palette as color}
+                      <span
+                        class="h-4 flex-1 rounded-sm border border-black/10"
+                        style="background:{color}"
+                      ></span>
+                    {/each}
+                  </div>
+                  <div class="truncate text-[11px] font-semibold">
+                    {theme.name}
+                  </div>
+                  <div class="text-muted-foreground text-[10px] capitalize">
+                    {theme.mode}
+                  </div>
+                </button>
+              {/each}
+            </div>
+          </section>
+        {:else if sidebarPanel === "editor" && dialogOpen}
+          <section aria-label="Add schedule item" class="p-4">
+            <div class="mb-4 flex items-center justify-between">
+              <h2 class="text-[14px] font-semibold">
+                {editorMode === "edit" ? "Edit" : "Add"}
+                {dialogKind === "pin" ? "pin" : "block"}
+              </h2>
+              <button
+                class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
+                on:click={() => {
+                  dialogOpen = false;
+                  sidebarPanel = "overview";
                 }}
               >
-                {#each week.days as day}
-                  <option value={day.weekday}>{day.dateLabel}</option>
-                {/each}
-              </select>
-            </label>
-            <div class="grid grid-cols-2 gap-2">
+                <X size={15} />
+              </button>
+            </div>
+            <div class="space-y-3 text-[12px]">
               <label class="block">
-                <span class="text-muted-foreground mb-1 block">Start</span>
+                <span class="text-muted-foreground mb-1 block">Title</span>
                 <input
-                  class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 font-mono outline-none focus:border-violet-400"
-                  value={formatTime(selected.startMinute)}
-                  readonly
+                  class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
+                  aria-label="Title"
+                  bind:value={draft.title}
                 />
               </label>
-              {#if selected.kind === "block"}
+              <div class="grid grid-cols-2 gap-2">
                 <label class="block">
-                  <span class="text-muted-foreground mb-1 block">End</span>
+                  <span class="text-muted-foreground mb-1 block">Day</span>
+                  <select
+                    class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
+                    aria-label="Day"
+                    bind:value={draft.weekday}
+                  >
+                    {#each week.days as day}
+                      <option value={day.weekday}>{day.dateLabel}</option>
+                    {/each}
+                  </select>
+                </label>
+                <label class="block">
+                  <span class="text-muted-foreground mb-1 block">Start time</span>
                   <input
-                    class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 font-mono outline-none focus:border-violet-400"
-                    value={formatTime(
-                      selected.endMinute ?? selected.startMinute,
-                    )}
-                    readonly
+                    class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
+                    aria-label="Start time"
+                    placeholder="4:25 AM"
+                    bind:value={draftStartTime}
+                  />
+                </label>
+              </div>
+              {#if dialogKind === "block"}
+                <label class="block">
+                  <span class="text-muted-foreground mb-1 block">End time</span>
+                  <input
+                    class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
+                    aria-label="End time"
+                    placeholder="5:15 AM"
+                    bind:value={draftEndTime}
                   />
                 </label>
               {/if}
-            </div>
-            {#if selected.kind === "block"}
               <label class="block">
-                <span class="text-muted-foreground mb-1 block">Duration</span>
-                <input
-                  class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 font-mono outline-none"
-                  value={formatDuration(
-                    (selected.endMinute ?? selected.startMinute) -
-                      selected.startMinute,
-                  )}
-                  readonly
-                />
+                <span class="text-muted-foreground mb-1 block">Category</span>
+                <select
+                  class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
+                  aria-label="Category"
+                  bind:value={draft.categoryId}
+                >
+                  {#each week.categories as category}
+                    <option value={category.id}>{category.name}</option>
+                  {/each}
+                </select>
               </label>
-            {/if}
-            <label class="block">
-              <span class="text-muted-foreground mb-1 block">Category</span>
-              <select
-                class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
-                value={selected.categoryId}
-                on:change={(event) => {
-                  updateLocalItem(selected.id, {
-                    categoryId: event.currentTarget.value,
-                  });
-                  persistItem({
-                    ...selected,
-                    categoryId: event.currentTarget.value,
-                  });
-                }}
-              >
-                {#each week.categories as category}
-                  <option value={category.id}>{category.name}</option>
-                {/each}
-              </select>
-            </label>
-
-            <div>
-              <span class="text-muted-foreground mb-2 block">Color</span>
-              <div class="flex gap-2">
-                {#each week.categories as category}
-                  <button
-                    class="h-5 w-5 rounded-full border {selected.categoryId ===
-                    category.id
-                      ? 'border-white ring-2 ring-[#7aa2f7]'
-                      : 'border-transparent'}"
-                    style="background:{category.color}"
-                    title={category.name}
-                    on:click={() => {
-                      updateLocalItem(selected.id, { categoryId: category.id });
-                      persistItem({ ...selected, categoryId: category.id });
-                    }}
-                  ></button>
-                {/each}
-              </div>
+              <label class="block">
+                <span class="text-muted-foreground mb-1 block">Notes</span>
+                <textarea
+                  class="border-border bg-muted/30 min-h-20 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
+                  aria-label="Notes"
+                  bind:value={draft.notes}
+                ></textarea>
+              </label>
+              {#if dialogKind === "pin"}
+                <label class="text-muted-foreground flex items-center gap-2">
+                  <input type="checkbox" bind:checked={draft.completed} />
+                  Completed
+                </label>
+              {/if}
+              {#if editorError}
+                <div
+                  class="rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-red-200"
+                >
+                  {editorError}
+                </div>
+              {/if}
             </div>
-
-            {#if selected.kind === "pin"}
-              <label class="text-muted-foreground flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={selected.completed}
-                  on:change={(event) => {
-                    updateLocalItem(selected.id, {
-                      completed: event.currentTarget.checked,
-                    });
-                    persistItem({
-                      ...selected,
-                      completed: event.currentTarget.checked,
-                    });
-                  }}
-                />
-                Completed
-              </label>
-            {/if}
-
-            {#if selectedWarnings.length}
-              <div
-                class="rounded-md border border-red-400/50 bg-red-500/12 p-3 text-red-100"
-              >
-                <div class="mb-1 flex items-center gap-2 font-semibold">
-                  <Clock3 size={14} /> Overlap
-                </div>
-                <div class="text-[11px] text-red-100/75">
-                  Overlaps with {selectedWarnings[0].otherTitle}
-                </div>
-              </div>
-            {/if}
-
-            <div class="flex gap-2 pt-2">
+            <div class="mt-5 flex flex-wrap justify-end gap-2">
+              {#if editorMode === "edit"}
+                <button
+                  class="mr-auto rounded-md border border-red-400/30 px-3 py-2 text-[12px] text-red-300 hover:bg-red-500/10"
+                  on:click={deleteEditingItem}
+                >
+                  Delete
+                </button>
+                <button
+                  class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
+                  on:click={duplicateSelected}
+                >
+                  Duplicate
+                </button>
+              {/if}
               <button
-                class="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-md border px-3 py-2"
-                on:click={() => openEdit(selected)}
+                class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
+                on:click={() => {
+                  dialogOpen = false;
+                  sidebarPanel = "overview";
+                }}>Cancel</button
               >
-                Edit
-              </button>
               <button
-                class="flex items-center gap-1 rounded-md border border-red-400/30 px-3 py-2 text-red-300 hover:bg-red-500/10"
-                on:click={deleteSelected}
-              >
-                <Trash2 size={14} /> Delete
-              </button>
-              <button
-                class="border-border text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md border px-3 py-2"
-                on:click={duplicateSelected}
-              >
-                <Copy size={14} /> Duplicate
-              </button>
-              <button
-                class="ml-auto rounded-md bg-[#7aa2f7] px-4 py-2 font-semibold text-[#101014] hover:bg-[#9eceff]"
-                on:click={() => (selectedId = null)}>Done</button
+                class="rounded-md bg-[#7aa2f7] px-3 py-2 text-[12px] font-semibold text-[#101014] hover:bg-[#9eceff]"
+                on:click={saveItem}
+                >{editorMode === "edit" ? "Save" : "Create"}</button
               >
             </div>
-          </div>
+          </section>
         {:else}
-          <div
-            class="border-border text-muted-foreground rounded-md border border-dashed p-4 text-[12px]"
-          >
-            Select a block or pin to edit its details.
-          </div>
+          <section class="border-border border-b">
+            <button
+              class="flex w-full items-center justify-between p-4 text-left"
+              on:click={() => (versionsCollapsed = !versionsCollapsed)}
+            >
+              <span class="text-[13px] font-semibold">Schedule versions</span>
+              <span class="flex items-center gap-2">
+                <span
+                  class="rounded border border-[#7aa2f7]/30 px-1.5 py-0.5 text-[10px] text-[#a9c3ff]"
+                  >Active</span
+                >
+                {#if versionsCollapsed}
+                  <ChevronRight size={14} />
+                {:else}
+                  <ChevronDown size={14} />
+                {/if}
+              </span>
+            </button>
+            {#if !versionsCollapsed}
+              <div class="px-4 pb-4">
+                <div class="mb-3 space-y-1">
+                  {#each week.versions as version}
+                    <button
+                      class="flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-[12px] {version.isActive
+                        ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/14 text-[#c0caf5]'
+                        : 'hover:bg-muted/45 border-transparent'}"
+                      on:click={() => activateVersion(version.id)}
+                    >
+                      <span
+                        class="h-2.5 w-2.5 rounded-full {version.isDefault
+                          ? 'bg-[#9ece6a]'
+                          : 'bg-[#bb9af7]'}"
+                      ></span>
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate">{version.name}</span>
+                        <span
+                          class="text-muted-foreground block font-mono text-[10px]"
+                          >{formatDuration(version.totalMinutes)} · {version.itemCount} items</span
+                        >
+                      </span>
+                    </button>
+                  {/each}
+                </div>
+                <input
+                  class="border-border bg-muted/30 mb-2 w-full rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
+                  placeholder="Sandbox name"
+                  bind:value={newVersionName}
+                />
+                <div class="grid grid-cols-2 gap-2">
+                  <button
+                    class="rounded-md border border-[#bb9af7]/35 bg-[#bb9af7]/14 px-2 py-1.5 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/24"
+                    on:click={createSandboxVersion}
+                  >
+                    Copy sandbox
+                  </button>
+                  <button
+                    class="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-md border px-2 py-1.5 text-[11px]"
+                    on:click={renameActiveVersion}
+                  >
+                    Rename
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </section>
+
+          <section class="border-border border-b">
+            <button
+              class="flex w-full items-center justify-between p-4 text-left"
+              on:click={() => (categoriesCollapsed = !categoriesCollapsed)}
+            >
+              <span class="text-[13px] font-semibold">Categories</span>
+              {#if categoriesCollapsed}
+                <ChevronRight size={14} />
+              {:else}
+                <ChevronDown size={14} />
+              {/if}
+            </button>
+            {#if !categoriesCollapsed}
+              <div class="px-4 pb-4">
+                <div
+                  class="text-muted-foreground mb-2 text-[10px] font-semibold tracking-[0.12em] uppercase"
+                >
+                  Weekly totals
+                </div>
+                <div class="space-y-2">
+                  {#each week.categories as category}
+                    {@const total =
+                      week.weeklyTotals.find(
+                        (row) => row.categoryId === category.id,
+                      )?.minutes ?? 0}
+                    <div class="flex items-center gap-2 text-[12px]">
+                      <span
+                        class="h-3 w-3 rounded-full"
+                        style="background:{category.color}"
+                      ></span>
+                      <span class="flex-1">{category.name}</span>
+                      <span class="text-muted-foreground font-mono text-[11px]"
+                        >{formatDuration(total)}</span
+                      >
+                    </div>
+                  {/each}
+                </div>
+                <div
+                  class="border-border mt-3 flex items-center justify-between border-t pt-3 text-[12px]"
+                >
+                  <span>Total</span>
+                  <span class="text-muted-foreground font-mono"
+                    >{formatDuration(
+                      week.weeklyTotals.reduce(
+                        (sum, row) => sum + row.minutes,
+                        0,
+                      ),
+                    )}</span
+                  >
+                </div>
+              </div>
+            {/if}
+          </section>
+
+          <section class="border-border border-b">
+            <button
+              class="flex w-full items-center justify-between p-4 text-left"
+              on:click={() => (dailyTotalsCollapsed = !dailyTotalsCollapsed)}
+            >
+              <span class="text-[13px] font-semibold">Daily totals</span>
+              {#if dailyTotalsCollapsed}
+                <ChevronRight size={14} />
+              {:else}
+                <ChevronDown size={14} />
+              {/if}
+            </button>
+            {#if !dailyTotalsCollapsed}
+              <div class="space-y-1 px-4 pb-4">
+                {#each week.dailyTotals as total}
+                  <button
+                    class="hover:bg-muted/50 flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[12px] {visibleDay ===
+                    total.weekday
+                      ? 'border border-[#7aa2f7]/60 bg-[#7aa2f7]/16 text-[#c0caf5]'
+                      : 'border border-transparent'}"
+                    on:click={() => {
+                      visibleDay = total.weekday;
+                      dayFocus = true;
+                    }}
+                  >
+                    <span>{week.days[total.weekday - 1].dayName}</span>
+                    <span class="text-muted-foreground font-mono text-[11px]"
+                      >{formatDuration(total.minutes)}</span
+                    >
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </section>
+
+          <section class="p-4">
+            {#if selected && selectedCategory}
+              <div class="mb-3 flex items-center gap-2">
+                <span
+                  class="h-3 w-3 rounded-full"
+                  style="background:{selectedCategory.color}"
+                ></span>
+                <div class="min-w-0 flex-1">
+                  <h2 class="truncate text-[13px] font-semibold">
+                    {selected.title}
+                  </h2>
+                  <div class="text-muted-foreground text-[11px]">
+                    {selectedDayLabel(selected.weekday)} · {formatTime(
+                      selected.startMinute,
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2 text-[12px]">
+                <button
+                  class="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-md border px-3 py-2"
+                  on:click={() => openEdit(selected)}
+                >
+                  Edit
+                </button>
+                <button
+                  class="border-border text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md border px-3 py-2"
+                  on:click={duplicateSelected}
+                >
+                  <Copy size={14} /> Duplicate
+                </button>
+                <button
+                  class="flex items-center gap-1 rounded-md border border-red-400/30 px-3 py-2 text-red-300 hover:bg-red-500/10"
+                  on:click={deleteSelected}
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              </div>
+              {#if selectedWarnings.length}
+                <div
+                  class="mt-3 rounded-md border border-red-400/50 bg-red-500/12 p-3 text-[12px] text-red-100"
+                >
+                  <div class="mb-1 flex items-center gap-2 font-semibold">
+                    <Clock3 size={14} /> Overlap
+                  </div>
+                  <div class="text-[11px] text-red-100/75">
+                    Overlaps with {selectedWarnings[0].otherTitle}
+                  </div>
+                </div>
+              {/if}
+            {:else}
+              <div
+                class="border-border text-muted-foreground rounded-md border border-dashed p-4 text-[12px]"
+              >
+                Select a block or pin to edit its details.
+              </div>
+            {/if}
+          </section>
         {/if}
-      </section>
+      </div>
     </aside>
   </main>
 
@@ -1562,181 +1689,3 @@
     <span>All data is stored locally on this device.</span>
   </footer>
 </div>
-
-{#if dialogOpen}
-  <button
-    type="button"
-    class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
-    aria-label="Close add item dialog"
-    on:click={() => (dialogOpen = false)}
-  ></button>
-  <div
-    role="dialog"
-    aria-modal="true"
-    aria-label="Add schedule item"
-    class="border-border bg-surface fixed inset-4 z-50 overflow-y-auto rounded-lg border p-5 shadow-2xl md:top-1/2 md:bottom-auto md:left-1/2 md:w-[460px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2"
-  >
-    <h2 class="text-[15px] font-semibold">
-      {editorMode === "edit" ? "Edit" : "Add"}
-      {dialogKind === "pin" ? "pin" : "block"}
-    </h2>
-    <div class="mt-4 space-y-3 text-[12px]">
-      <label class="block">
-        <span class="text-muted-foreground mb-1 block">Title</span>
-        <input
-          class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
-          bind:value={draft.title}
-        />
-      </label>
-      <div class="grid grid-cols-2 gap-2">
-        <label class="block">
-          <span class="text-muted-foreground mb-1 block">Day</span>
-          <select
-            class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-            bind:value={draft.weekday}
-          >
-            {#each week.days as day}
-              <option value={day.weekday}>{day.dateLabel}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="block">
-          <span class="text-muted-foreground mb-1 block">Start time</span>
-          <input
-            class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-            placeholder="4:25 AM"
-            bind:value={draftStartTime}
-          />
-        </label>
-      </div>
-      {#if dialogKind === "block"}
-        <label class="block">
-          <span class="text-muted-foreground mb-1 block">End time</span>
-          <input
-            class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-            placeholder="5:15 AM"
-            bind:value={draftEndTime}
-          />
-        </label>
-      {/if}
-      <label class="block">
-        <span class="text-muted-foreground mb-1 block">Category</span>
-        <select
-          class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-          bind:value={draft.categoryId}
-        >
-          {#each week.categories as category}
-            <option value={category.id}>{category.name}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="block">
-        <span class="text-muted-foreground mb-1 block">Notes</span>
-        <textarea
-          class="border-border bg-muted/30 min-h-20 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
-          bind:value={draft.notes}
-        ></textarea>
-      </label>
-      {#if dialogKind === "pin"}
-        <label class="text-muted-foreground flex items-center gap-2">
-          <input type="checkbox" bind:checked={draft.completed} />
-          Completed
-        </label>
-      {/if}
-      {#if editorError}
-        <div
-          class="rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-red-200"
-        >
-          {editorError}
-        </div>
-      {/if}
-    </div>
-    <div class="mt-5 flex flex-wrap justify-end gap-2">
-      {#if editorMode === "edit"}
-        <button
-          class="mr-auto rounded-md border border-red-400/30 px-3 py-2 text-[12px] text-red-300 hover:bg-red-500/10"
-          on:click={deleteEditingItem}
-        >
-          Delete
-        </button>
-        <button
-          class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
-          on:click={duplicateSelected}
-        >
-          Duplicate
-        </button>
-      {/if}
-      <button
-        class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
-        on:click={() => (dialogOpen = false)}>Cancel</button
-      >
-      <button
-        class="rounded-md bg-[#7aa2f7] px-3 py-2 text-[12px] font-semibold text-[#101014] hover:bg-[#9eceff]"
-        on:click={saveItem}>{editorMode === "edit" ? "Save" : "Create"}</button
-      >
-    </div>
-  </div>
-{/if}
-
-{#if settingsOpen}
-  <button
-    type="button"
-    class="fixed inset-0 z-40 bg-black/50"
-    aria-label="Close settings"
-    on:click={() => (settingsOpen = false)}
-  ></button>
-  <div
-    role="dialog"
-    aria-modal="true"
-    aria-label="Settings"
-    class="border-border bg-surface fixed inset-4 z-50 overflow-hidden rounded-lg border shadow-2xl md:top-1/2 md:bottom-auto md:left-1/2 md:w-[620px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2"
-  >
-    <div class="border-border flex items-center justify-between border-b p-4">
-      <h2 class="text-[15px] font-semibold">Settings</h2>
-      <button
-        class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
-        on:click={() => (settingsOpen = false)}
-      >
-        <X size={15} />
-      </button>
-    </div>
-    <div class="max-h-[calc(82vh-58px)] overflow-y-auto p-4">
-      <div class="mb-3 flex items-center justify-between">
-        <div>
-          <div class="text-[13px] font-semibold">Theme</div>
-          <div class="text-muted-foreground text-[11px]">
-            Built-in editor-inspired light and dark palettes.
-          </div>
-        </div>
-        <span class="text-muted-foreground text-[11px]"
-          >{themeById(themeId).name}</span
-        >
-      </div>
-      <div class="grid grid-cols-2 gap-2 md:grid-cols-3">
-        {#each APP_THEMES as theme}
-          <button
-            class="border-border hover:bg-muted/60 rounded-md border p-2 text-left {theme.id ===
-            themeId
-              ? 'ring-ring bg-muted/70 ring-2'
-              : 'bg-muted/20'}"
-            data-testid={`theme-${theme.id}`}
-            on:click={() => (themeId = theme.id)}
-          >
-            <div class="mb-2 flex gap-1">
-              {#each theme.palette as color}
-                <span
-                  class="h-4 flex-1 rounded-sm border border-black/10"
-                  style="background:{color}"
-                ></span>
-              {/each}
-            </div>
-            <div class="truncate text-[12px] font-semibold">{theme.name}</div>
-            <div class="text-muted-foreground text-[10px] capitalize">
-              {theme.mode}
-            </div>
-          </button>
-        {/each}
-      </div>
-    </div>
-  </div>
-{/if}

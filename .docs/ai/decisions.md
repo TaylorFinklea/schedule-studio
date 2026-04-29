@@ -13,5 +13,5 @@
 ## 2026-04-28
 
 - Calendar hover creation shows explicit Block and Pin actions instead of creating items immediately, and calendar-created blocks default to 30 minutes.
-- Schedule editing uses 5-minute precision globally, keeps existing integer-minute SQLite storage, and supports zoom up to 360 px/hour for small blocks.
-- Item creation and editing share one dialog with human-readable time fields; layout and theme are local UI preferences stored in `localStorage`, not schedule data.
+- Schedule editing uses 5-minute precision globally, keeps existing integer-minute SQLite storage, and supports zoom up to 720 px/hour for small blocks.
+- Item creation, item editing, and settings live in the right sidebar with human-readable time fields; layout and theme are local UI preferences stored in `localStorage`, not schedule data.

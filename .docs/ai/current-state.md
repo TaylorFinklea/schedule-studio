@@ -2,7 +2,7 @@
 
 ## Summary
 
-Schedule Studio is a public MIT-licensed SvelteKit app with local SQLite persistence, fictional first-run seed data, saved schedule versions for active/default and sandbox planning, Docker packaging, 5-minute timeline precision, vertical and horizontal timeline layouts, unified item editing, hover-to-add calendar controls, and a built-in 20-theme engine.
+Schedule Studio is a public MIT-licensed SvelteKit app with local SQLite persistence, fictional first-run seed data, saved schedule versions for active/default and sandbox planning, Docker packaging, 5-minute timeline precision, vertical and horizontal timeline layouts, right-sidebar item/settings editing, hover-to-add calendar controls, and a built-in 20-theme engine.
 
 ## Build Status
 
