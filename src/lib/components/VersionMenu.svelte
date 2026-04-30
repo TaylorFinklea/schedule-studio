@@ -1,0 +1,166 @@
+<script lang="ts">
+  import { Check, Plus, Trash2, X } from "lucide-svelte";
+  import type { ScheduleVersion } from "$lib/types";
+  import { formatDuration } from "$lib/schedule";
+
+  type Props = {
+    versions: ScheduleVersion[];
+    activeId: string;
+    defaultId: string;
+    onActivate: (id: string) => void;
+    onCreate: (name: string) => void;
+    onRename: (id: string, name: string) => void;
+    onDelete: (id: string) => void;
+    onClose: () => void;
+  };
+
+  let { versions, activeId, defaultId, onActivate, onCreate, onRename, onDelete, onClose }: Props =
+    $props();
+
+  let newName = $state("");
+  let renameValue = $state("");
+
+  const active = $derived(versions.find((v) => v.id === activeId));
+
+  $effect(() => {
+    renameValue = active?.name ?? "";
+  });
+
+  function submitCreate() {
+    const name = newName.trim();
+    if (!name) return;
+    onCreate(name);
+    newName = "";
+  }
+
+  function submitRename() {
+    const next = renameValue.trim();
+    if (!next || !active || next === active.name) return;
+    onRename(active.id, next);
+  }
+</script>
+
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<div
+  role="presentation"
+  class="fixed inset-0 z-40 flex items-start justify-start bg-black/30 backdrop-blur-sm"
+  onclick={() => onClose()}
+>
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <section
+    class="border-border bg-surface mt-16 ml-4 w-80 rounded-lg border p-4 shadow-2xl shadow-black/40"
+    onclick={(event) => event.stopPropagation()}
+    aria-label="Schedule versions"
+  >
+    <div class="mb-3 flex items-center justify-between">
+      <h2 class="text-[13px] font-semibold tracking-tight">Schedule versions</h2>
+      <button
+        type="button"
+        class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
+        aria-label="Close"
+        onclick={() => onClose()}
+      >
+        <X size={14} />
+      </button>
+    </div>
+
+    <ul class="mb-4 space-y-1">
+      {#each versions as version (version.id)}
+        <li>
+          <button
+            type="button"
+            class="border-border hover:bg-muted/50 flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-[12px] {version.id ===
+            activeId
+              ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/12'
+              : 'border-transparent'}"
+            onclick={() => onActivate(version.id)}
+          >
+            <span
+              class="block h-2 w-2 rounded-full {version.id === defaultId
+                ? 'bg-[#9ece6a]'
+                : 'bg-[#bb9af7]'}"
+            ></span>
+            <span class="min-w-0 flex-1">
+              <span class="text-foreground block truncate font-medium">
+                {version.name}
+              </span>
+              <span class="text-muted-foreground block font-mono text-[10px] tabular-nums">
+                {formatDuration(version.totalMinutes)} · {version.itemCount} items
+              </span>
+            </span>
+            {#if version.id === activeId}
+              <Check size={14} class="text-[#7aa2f7]" />
+            {/if}
+          </button>
+        </li>
+      {/each}
+    </ul>
+
+    <div class="border-border mb-4 space-y-2 border-t pt-3">
+      <div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+        New sandbox
+      </div>
+      <form
+        class="flex gap-2"
+        onsubmit={(event) => {
+          event.preventDefault();
+          submitCreate();
+        }}
+      >
+        <input
+          type="text"
+          placeholder="Name (e.g. Vacation week)"
+          bind:value={newName}
+          aria-label="New sandbox name"
+          class="border-border bg-muted/30 flex-1 rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
+        />
+        <button
+          type="submit"
+          class="bg-primary/15 border-primary/40 text-primary hover:bg-primary/25 flex items-center gap-1 rounded-md border px-2.5 text-[12px] font-medium"
+          aria-label="Create sandbox"
+        >
+          <Plus size={13} />
+        </button>
+      </form>
+    </div>
+
+    {#if active}
+      <div class="border-border space-y-2 border-t pt-3">
+        <div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+          Rename current
+        </div>
+        <form
+          class="flex gap-2"
+          onsubmit={(event) => {
+            event.preventDefault();
+            submitRename();
+          }}
+        >
+          <input
+            type="text"
+            bind:value={renameValue}
+            aria-label="Rename current version"
+            class="border-border bg-muted/30 flex-1 rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
+          />
+          <button
+            type="submit"
+            class="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-md border px-2.5 text-[12px]"
+          >
+            Save
+          </button>
+        </form>
+        {#if active.id !== defaultId}
+          <button
+            type="button"
+            class="flex w-full items-center justify-center gap-1.5 rounded-md border border-red-400/30 px-3 py-1.5 text-[12px] text-red-300 hover:bg-red-500/10"
+            onclick={() => onDelete(active.id)}
+          >
+            <Trash2 size={13} /> Delete sandbox
+          </button>
+        {/if}
+      </div>
+    {/if}
+  </section>
+</div>

@@ -13,6 +13,8 @@
   } from "lucide-svelte";
   import AppShell from "$lib/components/AppShell.svelte";
   import BudgetStrip from "$lib/components/BudgetStrip.svelte";
+  import CategoryEditor from "$lib/components/CategoryEditor.svelte";
+  import VersionMenu from "$lib/components/VersionMenu.svelte";
   import {
     formatDuration,
     formatTime,
@@ -62,6 +64,7 @@
   let hourHeight = $state(DEFAULT_HOUR_HEIGHT);
   let layoutMode = $state<"vertical" | "horizontal">("horizontal");
   let sidebarPanel = $state<"overview" | "editor" | "settings">("overview");
+  let versionMenuOpen = $state(false);
   let versionsCollapsed = $state(false);
   let categoriesCollapsed = $state(false);
   let dailyTotalsCollapsed = $state(false);
@@ -313,15 +316,14 @@
     await invalidateAll();
   }
 
-  async function createSandboxVersion() {
-    const name = newVersionName.trim() || `${week.templateName} sandbox`;
+  async function createSandboxVersion(name: string) {
     await fetch("/api/versions", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name, sourceTemplateId: week.templateId }),
     });
-    newVersionName = "";
     selectedId = null;
+    versionMenuOpen = false;
     await invalidateAll();
   }
 
@@ -335,22 +337,38 @@
     await invalidateAll();
   }
 
-  async function renameActiveVersion() {
-    const nextName = newVersionName.trim();
-    if (!nextName) return;
-    await fetch(`/api/versions/${week.templateId}`, {
+  async function renameVersion(id: string, name: string) {
+    if (!name) return;
+    await fetch(`/api/versions/${id}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: nextName }),
+      body: JSON.stringify({ name }),
     });
-    newVersionName = "";
     await invalidateAll();
   }
 
-  async function deleteCurrentSandbox() {
-    if (week.templateId === week.defaultTemplateId) return;
-    await fetch(`/api/versions/${week.templateId}`, { method: "DELETE" });
+  async function deleteVersion(id: string) {
+    if (id === week.defaultTemplateId) return;
+    await fetch(`/api/versions/${id}`, { method: "DELETE" });
     selectedId = null;
+    versionMenuOpen = false;
+    await invalidateAll();
+  }
+
+  async function updateCategorySettings(
+    id: string,
+    patch: {
+      name?: string;
+      color?: string;
+      budgetMode?: "target" | "minimum" | "observation";
+      targetMinutes?: number | null;
+    },
+  ) {
+    await fetch(`/api/categories/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
     await invalidateAll();
   }
 
@@ -611,6 +629,7 @@
     onZoomChange={setZoom}
     onAdd={() => openCreate("block")}
     onMenu={openSettings}
+    onVersionMenu={() => (versionMenuOpen = !versionMenuOpen)}
   />
   <BudgetStrip
     categories={week.categories}
@@ -1203,39 +1222,68 @@
             <X size={15} />
           </button>
         </div>
-        <div class="min-h-0 flex-1 overflow-y-auto p-4">
-          <div class="text-muted-foreground mb-2 text-[10px] font-semibold tracking-[0.12em] uppercase">
-            Theme
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            {#each APP_THEMES as theme}
-              <button
-                class="border-border hover:bg-muted/60 rounded-md border p-2 text-left {theme.id ===
-                themeId
-                  ? 'ring-ring bg-muted/70 ring-2'
-                  : 'bg-muted/20'}"
-                data-testid={`theme-${theme.id}`}
-                on:click={() => (themeId = theme.id)}
-              >
-                <div class="mb-2 flex gap-1">
-                  {#each theme.palette as color}
-                    <span
-                      class="h-4 flex-1 rounded-sm border border-black/10"
-                      style="background:{color}"
-                    ></span>
-                  {/each}
-                </div>
-                <div class="truncate text-[11px] font-semibold">
-                  {theme.name}
-                </div>
-                <div class="text-muted-foreground text-[10px] capitalize">
-                  {theme.mode}
-                </div>
-              </button>
-            {/each}
-          </div>
+        <div class="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+          <section>
+            <div
+              class="text-muted-foreground mb-2 text-[10px] font-semibold tracking-[0.12em] uppercase"
+            >
+              Categories &amp; budgets
+            </div>
+            <CategoryEditor
+              categories={week.categories}
+              onUpdate={updateCategorySettings}
+            />
+          </section>
+
+          <section>
+            <div
+              class="text-muted-foreground mb-2 text-[10px] font-semibold tracking-[0.12em] uppercase"
+            >
+              Theme
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              {#each APP_THEMES as theme}
+                <button
+                  class="border-border hover:bg-muted/60 rounded-md border p-2 text-left {theme.id ===
+                  themeId
+                    ? 'ring-ring bg-muted/70 ring-2'
+                    : 'bg-muted/20'}"
+                  data-testid={`theme-${theme.id}`}
+                  on:click={() => (themeId = theme.id)}
+                >
+                  <div class="mb-2 flex gap-1">
+                    {#each theme.palette as color}
+                      <span
+                        class="h-4 flex-1 rounded-sm border border-black/10"
+                        style="background:{color}"
+                      ></span>
+                    {/each}
+                  </div>
+                  <div class="truncate text-[11px] font-semibold">
+                    {theme.name}
+                  </div>
+                  <div class="text-muted-foreground text-[10px] capitalize">
+                    {theme.mode}
+                  </div>
+                </button>
+              {/each}
+            </div>
+          </section>
         </div>
       </aside>
     </div>
+  {/if}
+
+  {#if versionMenuOpen}
+    <VersionMenu
+      versions={week.versions}
+      activeId={week.templateId}
+      defaultId={week.defaultTemplateId}
+      onActivate={activateVersion}
+      onCreate={createSandboxVersion}
+      onRename={renameVersion}
+      onDelete={deleteVersion}
+      onClose={() => (versionMenuOpen = false)}
+    />
   {/if}
 </div>
