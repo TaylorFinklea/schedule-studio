@@ -65,6 +65,7 @@
   let layoutMode = $state<"vertical" | "horizontal">("horizontal");
   let sidebarPanel = $state<"overview" | "editor" | "settings">("overview");
   let versionMenuOpen = $state(false);
+  let editorAnchor = $state<{ x: number; y: number } | null>(null);
   let versionsCollapsed = $state(false);
   let categoriesCollapsed = $state(false);
   let dailyTotalsCollapsed = $state(false);
@@ -202,7 +203,7 @@
     sidebarPanel = "editor";
   }
 
-  function openEdit(item: ScheduleItem) {
+  function openEdit(item: ScheduleItem, event?: MouseEvent | PointerEvent) {
     editorMode = "edit";
     editingId = item.id;
     dialogKind = item.kind;
@@ -221,6 +222,12 @@
     draftEndTime = formatTime(item.endMinute ?? item.startMinute);
     editorError = "";
     selectedId = item.id;
+    if (event?.currentTarget instanceof HTMLElement) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      editorAnchor = { x: rect.left + rect.width / 2, y: rect.bottom };
+    } else if (event && "clientX" in event) {
+      editorAnchor = { x: event.clientX, y: event.clientY };
+    }
     dialogOpen = true;
     sidebarPanel = "editor";
   }
@@ -468,6 +475,7 @@
       maxStart,
       Math.min(maxStartMinute, snapMinute(rawMinute)),
     );
+    editorAnchor = { x: event.clientX, y: event.clientY };
     openCreate("block", weekday, minute, HOVER_BLOCK_DURATION);
   }
 
@@ -715,8 +723,8 @@
                     'pin'
                       ? 'transparent'
                       : `linear-gradient(135deg, ${category.color}42, ${category.color}1a)`};"
-                    on:click={() => openEdit(item)}
-                    on:dblclick={() => openEdit(item)}
+                    on:click={(event) => openEdit(item, event)}
+                    on:dblclick={(event) => openEdit(item, event)}
                     on:pointermove={moveDrag}
                     on:pointerup={endDrag}
                     on:pointercancel={endDrag}
@@ -888,7 +896,7 @@
                       style="{horizontalItemStyle(item)} {item.kind === 'pin'
                         ? `background:${category.color}1a; border:1px solid ${category.color}55;`
                         : `border-left-color:${category.color}; background:${category.color}14;`}"
-                      on:click={() => openEdit(item)}
+                      on:click={(event) => openEdit(item, event)}
                       on:pointermove={moveDrag}
                       on:pointerup={endDrag}
                       on:pointercancel={endDrag}
@@ -962,10 +970,16 @@
   </main>
 
   {#if dialogOpen}
+    {@const popX = editorAnchor
+      ? Math.max(12, Math.min(editorAnchor.x - 168, window.innerWidth - 348))
+      : Math.max(12, window.innerWidth / 2 - 168)}
+    {@const popY = editorAnchor
+      ? Math.max(72, Math.min(editorAnchor.y + 8, window.innerHeight - 460))
+      : 96}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
-      class="fixed inset-0 z-40 flex items-start justify-center bg-black/50 px-4 pt-24 backdrop-blur-sm"
+      class="fixed inset-0 z-40"
       on:click={() => {
         dialogOpen = false;
         sidebarPanel = "overview";
@@ -975,7 +989,8 @@
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <section
         aria-label="Add schedule item"
-        class="border-border bg-surface relative w-full max-w-md rounded-lg border p-5 shadow-2xl shadow-black/40"
+        class="border-border bg-surface absolute w-[336px] rounded-lg border p-4 shadow-2xl shadow-black/50"
+        style="left:{popX}px;top:{popY}px;"
         on:click|stopPropagation
       >
         <div class="mb-4 flex items-center justify-between gap-3">
