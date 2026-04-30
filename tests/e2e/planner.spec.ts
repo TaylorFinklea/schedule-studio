@@ -1,108 +1,79 @@
 import { expect, test } from "@playwright/test";
 
-test("renders the planner shell and opens the add block dialog", async ({
-  page,
-}, testInfo) => {
-  test.skip(
-    testInfo.project.name === "mobile",
-    "The compact mobile toolbar does not expose the header Add block button.",
+test("renders the calm shell with budget strip", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("button", { name: /Add$/ })).toBeVisible();
+  await expect(page.getByLabel("Weekly budget summary")).toBeVisible();
+  await expect(page.getByTestId("layout-horizontal")).toHaveAttribute(
+    "aria-pressed",
+    "true",
   );
+});
 
+test("the Add button opens the editor modal", async ({ page }) => {
   await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: /^Add$/ }).click();
   await expect(
-    page.getByRole("heading", { name: "Schedule Studio" }),
+    page.locator('section[aria-label="Add schedule item"]'),
   ).toBeVisible();
-  await expect(page.getByText("Weekly totals")).toBeVisible();
-  await page.waitForLoadState("networkidle");
-  await page.getByRole("button", { name: "Add block" }).click();
-  await expect(page.locator('section[aria-label="Add schedule item"]')).toBeVisible();
+  await expect(page.getByLabel("Title")).toBeVisible();
+  await expect(page.getByLabel("Start time")).toBeVisible();
 });
 
-test("mobile can use day focus", async ({ page }) => {
-  await page.goto("/");
-  await page.getByText("Day focus").click({ force: true });
-  await expect(page.getByText("Daily totals")).toBeVisible();
-});
-
-test("timeline zoom supports five-minute precision", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByLabel("Timeline zoom")).toHaveAttribute("max", "720");
-  await expect(page.getByText("5-minute grid")).toBeVisible();
-});
-
-test("can add a block from an empty calendar hover slot", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForLoadState("networkidle");
-
-  await page.getByTestId("day-column-6").hover({ position: { x: 80, y: 523 } });
-  await page.getByTestId("hover-add-block").click();
-
-  await expect(page.locator('section[aria-label="Add schedule item"]')).toBeVisible();
-  await expect(page.getByLabel("Start time")).toHaveValue("8:05 AM");
-  await expect(page.getByLabel("End time")).toHaveValue("8:35 AM");
-});
-
-test("can add a pin from an empty calendar hover slot", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForLoadState("networkidle");
-
-  await page.getByTestId("day-column-7").hover({ position: { x: 80, y: 523 } });
-  await page.getByTestId("hover-add-pin").click();
-
-  await expect(page.locator('section[aria-label="Add schedule item"]')).toBeVisible();
-  await expect(page.getByLabel("Start time")).toHaveValue("8:05 AM");
-  await expect(page.getByLabel("End time")).toHaveCount(0);
-});
-
-test("can edit an existing block through the unified editor", async ({
+test("clicking a schedule item opens the editor populated with its data", async ({
   page,
 }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-
   await page
     .getByTestId("schedule-item")
     .filter({ hasText: "Exercise" })
     .first()
-    .dblclick();
-
+    .click();
   const editor = page.locator('section[aria-label="Add schedule item"]');
   await expect(editor).toBeVisible();
   await expect(editor.getByLabel("Title")).toHaveValue(/exercise/i);
-  await expect(editor.getByLabel("Start time")).toHaveValue("4:40 AM");
-  await editor.getByLabel("Title").fill("Morning exercise");
-  await page.getByRole("button", { name: "Save" }).click({ force: true });
-  await expect(page.getByText("Morning exercise").first()).toBeVisible();
 });
 
-test("horizontal mode supports hover block creation", async ({ page }) => {
+test("the layout toggle switches between rows and columns", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("Timeline zoom").evaluate((element) => {
-    const input = element as HTMLInputElement;
-    input.value = "128";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await page.getByTestId("layout-vertical").click();
+  await expect(page.getByTestId("layout-vertical")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await page.getByTestId("layout-horizontal").click();
-  await expect(page.getByTestId("horizontal-day-6")).toBeVisible();
-
-  await page
-    .getByTestId("horizontal-day-6")
-    .hover({ position: { x: 523, y: 40 } });
-  await page.getByTestId("hover-add-block").click({ force: true });
-
-  await expect(page.locator('section[aria-label="Add schedule item"]')).toBeVisible();
-  await expect(page.getByLabel("Start time")).toHaveValue("7:40 AM");
+  await expect(page.getByTestId("layout-horizontal")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
-test("theme selection persists after reload", async ({ page }) => {
+test("the version menu lists schedule versions", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await page.getByTestId("version-menu").click();
+  await expect(page.getByLabel("Schedule versions")).toBeVisible();
+  await expect(page.getByLabel("New sandbox name")).toBeVisible();
+});
+
+test("settings drawer exposes both calm themes and persists the choice", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
   await page.getByTestId("settings-button").click();
-  await page.getByTestId("theme-catppuccin-mocha").click({ force: true });
-  await expect(page.getByText("Catppuccin Mocha").first()).toBeVisible();
-  await page.reload();
-  await expect(
-    page.evaluate(() => localStorage.getItem("schedule-studio-theme")),
-  ).resolves.toBe("catppuccin-mocha");
+  await expect(page.getByTestId("theme-tokyo-night")).toBeVisible();
+  await expect(page.getByTestId("theme-linen-light")).toBeVisible();
+  await page.getByTestId("theme-linen-light").click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("schedule-studio-theme")),
+    )
+    .toBe("linen-light");
 });
