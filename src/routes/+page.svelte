@@ -959,47 +959,45 @@
 
                   {#each day.items as item}
                     {@const category = categoryById(item.categoryId)}
+                    {@const isSelected = selectedId === item.id}
                     <button
                       data-schedule-item
                       data-testid="schedule-item"
-                      class="focus:ring-ring absolute z-10 overflow-hidden rounded-md border text-left shadow-lg shadow-black/20 hover:translate-y-[-1px] focus:ring-2 focus:outline-none {selectedId ===
-                      item.id
-                        ? 'ring-2 ring-[#7aa2f7]/80'
-                        : ''} {item.kind === 'pin'
-                        ? 'top-1 flex h-7 max-w-40 items-center gap-1.5 border-transparent bg-transparent px-1.5 !shadow-none'
-                        : 'top-10 bottom-3 px-3'}"
-                      style="{horizontalItemStyle(
-                        item,
-                      )} border-color: {category.color}; background: {item.kind ===
-                      'pin'
-                        ? 'transparent'
-                        : `linear-gradient(135deg, ${category.color}42, ${category.color}1a)`};"
+                      class="focus:ring-ring absolute z-10 overflow-hidden rounded-[5px] text-left transition-shadow focus:outline-none {isSelected
+                        ? 'ring-1 ring-[#7aa2f7]/70 shadow-md shadow-black/30'
+                        : 'hover:bg-white/[0.02]'} {item.kind === 'pin'
+                        ? 'top-1/2 -translate-y-1/2 z-20 flex h-5 items-center gap-1.5 px-1.5'
+                        : 'top-2 bottom-2 pl-2.5 pr-2 border-l-2'}"
+                      style="{horizontalItemStyle(item)} {item.kind === 'pin'
+                        ? `background:${category.color}1a; border:1px solid ${category.color}55;`
+                        : `border-left-color:${category.color}; background:${category.color}14;`}"
                       on:click={() => openEdit(item)}
-                      on:dblclick={() => openEdit(item)}
                       on:pointermove={moveDrag}
                       on:pointerup={endDrag}
                       on:pointercancel={endDrag}
                     >
                       {#if item.kind === "block"}
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <span
-                          data-testid="resize-start-handle"
-                          class="absolute top-1/2 left-0 z-30 h-9 w-2 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/60 bg-white/80"
-                          on:pointerdown={(event) =>
-                            beginDrag(
-                              event,
-                              item,
-                              "resize-start",
-                              "horizontal",
-                            )}
-                        ></span>
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <span
-                          data-testid="resize-end-handle"
-                          class="absolute top-1/2 right-0 z-30 h-9 w-2 translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/60 bg-white/80"
-                          on:pointerdown={(event) =>
-                            beginDrag(event, item, "resize-end", "horizontal")}
-                        ></span>
+                        {#if isSelected}
+                          <!-- svelte-ignore a11y_no_static_element_interactions -->
+                          <span
+                            data-testid="resize-start-handle"
+                            class="absolute top-1/2 left-0 z-30 h-7 w-1.5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm bg-[#7aa2f7]"
+                            on:pointerdown={(event) =>
+                              beginDrag(
+                                event,
+                                item,
+                                "resize-start",
+                                "horizontal",
+                              )}
+                          ></span>
+                          <!-- svelte-ignore a11y_no_static_element_interactions -->
+                          <span
+                            data-testid="resize-end-handle"
+                            class="absolute top-1/2 right-0 z-30 h-7 w-1.5 translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm bg-[#7aa2f7]"
+                            on:pointerdown={(event) =>
+                              beginDrag(event, item, "resize-end", "horizontal")}
+                          ></span>
+                        {/if}
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <span
                           class="absolute inset-0 z-10 cursor-grab"
@@ -1007,32 +1005,30 @@
                             beginDrag(event, item, "move", "horizontal")}
                         ></span>
                         <span
-                          class="relative z-20 block truncate text-[12px] font-semibold"
+                          class="text-foreground/95 relative z-20 block truncate text-[12px] font-medium tracking-tight"
                         >
                           {item.title}
                         </span>
                         <span
-                          class="text-foreground/70 relative z-20 mt-0.5 block truncate text-[11px]"
+                          class="text-muted-foreground relative z-20 mt-0.5 block truncate font-mono text-[10px] tabular-nums"
                         >
                           {formatTime(item.startMinute)
-                            .replace(" AM", "")
-                            .replace(" PM", "")} - {formatTime(
+                            .replace(":00 ", "")
+                            .replace(" AM", "a")
+                            .replace(" PM", "p")} – {formatTime(
                             item.endMinute ?? item.startMinute,
                           )
-                            .replace(" AM", "")
-                            .replace(" PM", "")}
+                            .replace(":00 ", "")
+                            .replace(" AM", "a")
+                            .replace(" PM", "p")}
                         </span>
                       {:else}
                         <span
-                          class="h-2.5 w-2.5 shrink-0 rounded-full"
+                          class="h-2 w-2 shrink-0 rounded-full"
                           style="background:{category.color}"
                         ></span>
                         <span
-                          class="absolute top-3 left-3 h-5 border-l-2"
-                          style="border-color:{category.color}"
-                        ></span>
-                        <span
-                          class="bg-background text-foreground relative rounded px-1.5 py-0.5 text-[10px] font-medium shadow-sm"
+                          class="text-foreground/95 truncate text-[11px] font-medium"
                           >{item.title}</span
                         >
                       {/if}
@@ -1046,40 +1042,10 @@
       </div>
     </section>
 
+    {#if dialogOpen || sidebarPanel === "settings"}
     <aside
-      class="border-border bg-surface flex w-[320px] shrink-0 flex-col border-l"
+      class="border-border bg-surface flex w-[340px] shrink-0 flex-col border-l"
     >
-      <div class="border-border flex shrink-0 items-center gap-1 border-b p-2 text-[11px]">
-        <button
-          class="flex-1 rounded px-2 py-1.5 {sidebarPanel === 'overview'
-            ? 'bg-muted text-foreground'
-            : 'text-muted-foreground hover:bg-muted/60'}"
-          on:click={() => {
-            sidebarPanel = "overview";
-            dialogOpen = false;
-          }}
-        >
-          Overview
-        </button>
-        <button
-          class="flex-1 rounded px-2 py-1.5 {sidebarPanel === 'editor'
-            ? 'bg-muted text-foreground'
-            : 'text-muted-foreground hover:bg-muted/60'}"
-          on:click={() =>
-            selected ? openEdit(selected) : openCreate("block", visibleDay)}
-        >
-          Editor
-        </button>
-        <button
-          class="flex-1 rounded px-2 py-1.5 {sidebarPanel === 'settings'
-            ? 'bg-muted text-foreground'
-            : 'text-muted-foreground hover:bg-muted/60'}"
-          on:click={openSettings}
-        >
-          Settings
-        </button>
-      </div>
-
       <div class="min-h-0 flex-1 overflow-y-auto">
         {#if sidebarPanel === "settings"}
           <section class="p-4">
@@ -1241,223 +1207,10 @@
               >
             </div>
           </section>
-        {:else}
-          <section class="border-border border-b">
-            <button
-              class="flex w-full items-center justify-between p-4 text-left"
-              on:click={() => (versionsCollapsed = !versionsCollapsed)}
-            >
-              <span class="text-[13px] font-semibold">Schedule versions</span>
-              <span class="flex items-center gap-2">
-                <span
-                  class="rounded border border-[#7aa2f7]/30 px-1.5 py-0.5 text-[10px] text-[#a9c3ff]"
-                  >Active</span
-                >
-                {#if versionsCollapsed}
-                  <ChevronRight size={14} />
-                {:else}
-                  <ChevronDown size={14} />
-                {/if}
-              </span>
-            </button>
-            {#if !versionsCollapsed}
-              <div class="px-4 pb-4">
-                <div class="mb-3 space-y-1">
-                  {#each week.versions as version}
-                    <button
-                      class="flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-[12px] {version.isActive
-                        ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/14 text-[#c0caf5]'
-                        : 'hover:bg-muted/45 border-transparent'}"
-                      on:click={() => activateVersion(version.id)}
-                    >
-                      <span
-                        class="h-2.5 w-2.5 rounded-full {version.isDefault
-                          ? 'bg-[#9ece6a]'
-                          : 'bg-[#bb9af7]'}"
-                      ></span>
-                      <span class="min-w-0 flex-1">
-                        <span class="block truncate">{version.name}</span>
-                        <span
-                          class="text-muted-foreground block font-mono text-[10px]"
-                          >{formatDuration(version.totalMinutes)} · {version.itemCount} items</span
-                        >
-                      </span>
-                    </button>
-                  {/each}
-                </div>
-                <input
-                  class="border-border bg-muted/30 mb-2 w-full rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
-                  placeholder="Sandbox name"
-                  bind:value={newVersionName}
-                />
-                <div class="grid grid-cols-2 gap-2">
-                  <button
-                    class="rounded-md border border-[#bb9af7]/35 bg-[#bb9af7]/14 px-2 py-1.5 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/24"
-                    on:click={createSandboxVersion}
-                  >
-                    Copy sandbox
-                  </button>
-                  <button
-                    class="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-md border px-2 py-1.5 text-[11px]"
-                    on:click={renameActiveVersion}
-                  >
-                    Rename
-                  </button>
-                </div>
-              </div>
-            {/if}
-          </section>
-
-          <section class="border-border border-b">
-            <button
-              class="flex w-full items-center justify-between p-4 text-left"
-              on:click={() => (categoriesCollapsed = !categoriesCollapsed)}
-            >
-              <span class="text-[13px] font-semibold">Categories</span>
-              {#if categoriesCollapsed}
-                <ChevronRight size={14} />
-              {:else}
-                <ChevronDown size={14} />
-              {/if}
-            </button>
-            {#if !categoriesCollapsed}
-              <div class="px-4 pb-4">
-                <div
-                  class="text-muted-foreground mb-2 text-[10px] font-semibold tracking-[0.12em] uppercase"
-                >
-                  Weekly totals
-                </div>
-                <div class="space-y-2">
-                  {#each week.categories as category}
-                    {@const total =
-                      week.weeklyTotals.find(
-                        (row) => row.categoryId === category.id,
-                      )?.minutes ?? 0}
-                    <div class="flex items-center gap-2 text-[12px]">
-                      <span
-                        class="h-3 w-3 rounded-full"
-                        style="background:{category.color}"
-                      ></span>
-                      <span class="flex-1">{category.name}</span>
-                      <span class="text-muted-foreground font-mono text-[11px]"
-                        >{formatDuration(total)}</span
-                      >
-                    </div>
-                  {/each}
-                </div>
-                <div
-                  class="border-border mt-3 flex items-center justify-between border-t pt-3 text-[12px]"
-                >
-                  <span>Total</span>
-                  <span class="text-muted-foreground font-mono"
-                    >{formatDuration(
-                      week.weeklyTotals.reduce(
-                        (sum, row) => sum + row.minutes,
-                        0,
-                      ),
-                    )}</span
-                  >
-                </div>
-              </div>
-            {/if}
-          </section>
-
-          <section class="border-border border-b">
-            <button
-              class="flex w-full items-center justify-between p-4 text-left"
-              on:click={() => (dailyTotalsCollapsed = !dailyTotalsCollapsed)}
-            >
-              <span class="text-[13px] font-semibold">Daily totals</span>
-              {#if dailyTotalsCollapsed}
-                <ChevronRight size={14} />
-              {:else}
-                <ChevronDown size={14} />
-              {/if}
-            </button>
-            {#if !dailyTotalsCollapsed}
-              <div class="space-y-1 px-4 pb-4">
-                {#each week.dailyTotals as total}
-                  <button
-                    class="hover:bg-muted/50 flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[12px] {visibleDay ===
-                    total.weekday
-                      ? 'border border-[#7aa2f7]/60 bg-[#7aa2f7]/16 text-[#c0caf5]'
-                      : 'border border-transparent'}"
-                    on:click={() => {
-                      visibleDay = total.weekday;
-                      dayFocus = true;
-                    }}
-                  >
-                    <span>{week.days[total.weekday - 1].dayName}</span>
-                    <span class="text-muted-foreground font-mono text-[11px]"
-                      >{formatDuration(total.minutes)}</span
-                    >
-                  </button>
-                {/each}
-              </div>
-            {/if}
-          </section>
-
-          <section class="p-4">
-            {#if selected && selectedCategory}
-              <div class="mb-3 flex items-center gap-2">
-                <span
-                  class="h-3 w-3 rounded-full"
-                  style="background:{selectedCategory.color}"
-                ></span>
-                <div class="min-w-0 flex-1">
-                  <h2 class="truncate text-[13px] font-semibold">
-                    {selected.title}
-                  </h2>
-                  <div class="text-muted-foreground text-[11px]">
-                    {selectedDayLabel(selected.weekday)} · {formatTime(
-                      selected.startMinute,
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div class="flex flex-wrap gap-2 text-[12px]">
-                <button
-                  class="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-md border px-3 py-2"
-                  on:click={() => openEdit(selected)}
-                >
-                  Edit
-                </button>
-                <button
-                  class="border-border text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md border px-3 py-2"
-                  on:click={duplicateSelected}
-                >
-                  <Copy size={14} /> Duplicate
-                </button>
-                <button
-                  class="flex items-center gap-1 rounded-md border border-red-400/30 px-3 py-2 text-red-300 hover:bg-red-500/10"
-                  on:click={deleteSelected}
-                >
-                  <Trash2 size={14} /> Delete
-                </button>
-              </div>
-              {#if selectedWarnings.length}
-                <div
-                  class="mt-3 rounded-md border border-red-400/50 bg-red-500/12 p-3 text-[12px] text-red-100"
-                >
-                  <div class="mb-1 flex items-center gap-2 font-semibold">
-                    <Clock3 size={14} /> Overlap
-                  </div>
-                  <div class="text-[11px] text-red-100/75">
-                    Overlaps with {selectedWarnings[0].otherTitle}
-                  </div>
-                </div>
-              {/if}
-            {:else}
-              <div
-                class="border-border text-muted-foreground rounded-md border border-dashed p-4 text-[12px]"
-              >
-                Select a block or pin to edit its details.
-              </div>
-            {/if}
-          </section>
         {/if}
       </div>
     </aside>
+    {/if}
   </main>
 
 </div>
