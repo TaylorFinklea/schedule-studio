@@ -1042,175 +1042,200 @@
       </div>
     </section>
 
-    {#if dialogOpen || sidebarPanel === "settings"}
-    <aside
-      class="border-border bg-surface flex w-[340px] shrink-0 flex-col border-l"
-    >
-      <div class="min-h-0 flex-1 overflow-y-auto">
-        {#if sidebarPanel === "settings"}
-          <section class="p-4">
-            <div class="mb-4 flex items-center justify-between">
-              <h2 class="text-[14px] font-semibold">Settings</h2>
-              <span class="text-muted-foreground text-[11px]"
-                >{themeById(themeId).name}</span
-              >
-            </div>
-            <div class="mb-3 text-[12px] font-semibold">Theme</div>
-            <div class="grid grid-cols-2 gap-2">
-              {#each APP_THEMES as theme}
-                <button
-                  class="border-border hover:bg-muted/60 rounded-md border p-2 text-left {theme.id ===
-                  themeId
-                    ? 'ring-ring bg-muted/70 ring-2'
-                    : 'bg-muted/20'}"
-                  data-testid={`theme-${theme.id}`}
-                  on:click={() => (themeId = theme.id)}
-                >
-                  <div class="mb-2 flex gap-1">
-                    {#each theme.palette as color}
-                      <span
-                        class="h-4 flex-1 rounded-sm border border-black/10"
-                        style="background:{color}"
-                      ></span>
-                    {/each}
-                  </div>
-                  <div class="truncate text-[11px] font-semibold">
-                    {theme.name}
-                  </div>
-                  <div class="text-muted-foreground text-[10px] capitalize">
-                    {theme.mode}
-                  </div>
-                </button>
-              {/each}
-            </div>
-          </section>
-        {:else if sidebarPanel === "editor" && dialogOpen}
-          <section aria-label="Add schedule item" class="p-4">
-            <div class="mb-4 flex items-center justify-between">
-              <h2 class="text-[14px] font-semibold">
-                {editorMode === "edit" ? "Edit" : "Add"}
-                {dialogKind === "pin" ? "pin" : "block"}
-              </h2>
-              <button
-                class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
-                on:click={() => {
-                  dialogOpen = false;
-                  sidebarPanel = "overview";
-                }}
-              >
-                <X size={15} />
-              </button>
-            </div>
-            <div class="space-y-3 text-[12px]">
-              <label class="block">
-                <span class="text-muted-foreground mb-1 block">Title</span>
-                <input
-                  class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
-                  aria-label="Title"
-                  bind:value={draft.title}
-                />
-              </label>
-              <div class="grid grid-cols-2 gap-2">
-                <label class="block">
-                  <span class="text-muted-foreground mb-1 block">Day</span>
-                  <select
-                    class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-                    aria-label="Day"
-                    bind:value={draft.weekday}
-                  >
-                    {#each week.days as day}
-                      <option value={day.weekday}>{day.dateLabel}</option>
-                    {/each}
-                  </select>
-                </label>
-                <label class="block">
-                  <span class="text-muted-foreground mb-1 block">Start time</span>
-                  <input
-                    class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-                    aria-label="Start time"
-                    placeholder="4:25 AM"
-                    bind:value={draftStartTime}
-                  />
-                </label>
-              </div>
-              {#if dialogKind === "block"}
-                <label class="block">
-                  <span class="text-muted-foreground mb-1 block">End time</span>
-                  <input
-                    class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-                    aria-label="End time"
-                    placeholder="5:15 AM"
-                    bind:value={draftEndTime}
-                  />
-                </label>
-              {/if}
-              <label class="block">
-                <span class="text-muted-foreground mb-1 block">Category</span>
-                <select
-                  class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-                  aria-label="Category"
-                  bind:value={draft.categoryId}
-                >
-                  {#each week.categories as category}
-                    <option value={category.id}>{category.name}</option>
-                  {/each}
-                </select>
-              </label>
-              <label class="block">
-                <span class="text-muted-foreground mb-1 block">Notes</span>
-                <textarea
-                  class="border-border bg-muted/30 min-h-20 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
-                  aria-label="Notes"
-                  bind:value={draft.notes}
-                ></textarea>
-              </label>
-              {#if dialogKind === "pin"}
-                <label class="text-muted-foreground flex items-center gap-2">
-                  <input type="checkbox" bind:checked={draft.completed} />
-                  Completed
-                </label>
-              {/if}
-              {#if editorError}
-                <div
-                  class="rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-red-200"
-                >
-                  {editorError}
-                </div>
-              {/if}
-            </div>
-            <div class="mt-5 flex flex-wrap justify-end gap-2">
-              {#if editorMode === "edit"}
-                <button
-                  class="mr-auto rounded-md border border-red-400/30 px-3 py-2 text-[12px] text-red-300 hover:bg-red-500/10"
-                  on:click={deleteEditingItem}
-                >
-                  Delete
-                </button>
-                <button
-                  class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
-                  on:click={duplicateSelected}
-                >
-                  Duplicate
-                </button>
-              {/if}
-              <button
-                class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
-                on:click={() => {
-                  dialogOpen = false;
-                  sidebarPanel = "overview";
-                }}>Cancel</button
-              >
-              <button
-                class="rounded-md bg-[#7aa2f7] px-3 py-2 text-[12px] font-semibold text-[#101014] hover:bg-[#9eceff]"
-                on:click={saveItem}
-                >{editorMode === "edit" ? "Save" : "Create"}</button
-              >
-            </div>
-          </section>
-        {/if}
-      </div>
-    </aside>
-    {/if}
   </main>
 
+  {#if dialogOpen}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div
+      class="fixed inset-0 z-40 flex items-start justify-center bg-black/50 px-4 pt-24 backdrop-blur-sm"
+      on:click={() => {
+        dialogOpen = false;
+        sidebarPanel = "overview";
+      }}
+    >
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <section
+        aria-label="Add schedule item"
+        class="border-border bg-surface relative w-full max-w-md rounded-lg border p-5 shadow-2xl shadow-black/40"
+        on:click|stopPropagation
+      >
+        <div class="mb-4 flex items-center justify-between">
+          <h2 class="text-[14px] font-semibold tracking-tight">
+            {editorMode === "edit" ? "Edit" : "Add"}
+            {dialogKind === "pin" ? "pin" : "block"}
+          </h2>
+          <button
+            class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
+            aria-label="Close"
+            on:click={() => {
+              dialogOpen = false;
+              sidebarPanel = "overview";
+            }}
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <div class="space-y-3 text-[12px]">
+          <label class="block">
+            <span class="text-muted-foreground mb-1 block">Title</span>
+            <input
+              class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
+              aria-label="Title"
+              bind:value={draft.title}
+            />
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="block">
+              <span class="text-muted-foreground mb-1 block">Day</span>
+              <select
+                class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
+                aria-label="Day"
+                bind:value={draft.weekday}
+              >
+                {#each week.days as day}
+                  <option value={day.weekday}>{day.dateLabel}</option>
+                {/each}
+              </select>
+            </label>
+            <label class="block">
+              <span class="text-muted-foreground mb-1 block">Start time</span>
+              <input
+                class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
+                aria-label="Start time"
+                placeholder="4:25 AM"
+                bind:value={draftStartTime}
+              />
+            </label>
+          </div>
+          {#if dialogKind === "block"}
+            <label class="block">
+              <span class="text-muted-foreground mb-1 block">End time</span>
+              <input
+                class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
+                aria-label="End time"
+                placeholder="5:15 AM"
+                bind:value={draftEndTime}
+              />
+            </label>
+          {/if}
+          <label class="block">
+            <span class="text-muted-foreground mb-1 block">Category</span>
+            <select
+              class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
+              aria-label="Category"
+              bind:value={draft.categoryId}
+            >
+              {#each week.categories as category}
+                <option value={category.id}>{category.name}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="block">
+            <span class="text-muted-foreground mb-1 block">Notes</span>
+            <textarea
+              class="border-border bg-muted/30 min-h-20 w-full rounded-md border px-2 py-1.5 outline-none focus:border-[#7aa2f7]"
+              aria-label="Notes"
+              bind:value={draft.notes}
+            ></textarea>
+          </label>
+          {#if editorError}
+            <div
+              class="rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-red-200"
+            >
+              {editorError}
+            </div>
+          {/if}
+        </div>
+        <div class="mt-5 flex flex-wrap justify-end gap-2">
+          {#if editorMode === "edit"}
+            <button
+              class="mr-auto rounded-md border border-red-400/30 px-3 py-2 text-[12px] text-red-300 hover:bg-red-500/10"
+              on:click={deleteEditingItem}
+            >
+              Delete
+            </button>
+            <button
+              class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
+              on:click={duplicateSelected}
+            >
+              Duplicate
+            </button>
+          {/if}
+          <button
+            class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
+            on:click={() => {
+              dialogOpen = false;
+              sidebarPanel = "overview";
+            }}>Cancel</button
+          >
+          <button
+            class="rounded-md bg-[#7aa2f7] px-3 py-2 text-[12px] font-semibold text-[#101014] hover:bg-[#9eceff]"
+            on:click={saveItem}
+            >{editorMode === "edit" ? "Save" : "Create"}</button
+          >
+        </div>
+      </section>
+    </div>
+  {/if}
+
+  {#if sidebarPanel === "settings"}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div
+      class="fixed inset-0 z-30 flex justify-end bg-black/40 backdrop-blur-sm"
+      on:click={() => (sidebarPanel = "overview")}
+    >
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <aside
+        class="border-border bg-surface flex h-full w-[360px] flex-col border-l shadow-2xl shadow-black/40"
+        on:click|stopPropagation
+      >
+        <div class="border-border flex items-center justify-between border-b p-4">
+          <h2 class="text-[14px] font-semibold tracking-tight">Settings</h2>
+          <button
+            class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
+            aria-label="Close"
+            on:click={() => (sidebarPanel = "overview")}
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <div class="min-h-0 flex-1 overflow-y-auto p-4">
+          <div class="text-muted-foreground mb-2 text-[10px] font-semibold tracking-[0.12em] uppercase">
+            Theme
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            {#each APP_THEMES as theme}
+              <button
+                class="border-border hover:bg-muted/60 rounded-md border p-2 text-left {theme.id ===
+                themeId
+                  ? 'ring-ring bg-muted/70 ring-2'
+                  : 'bg-muted/20'}"
+                data-testid={`theme-${theme.id}`}
+                on:click={() => (themeId = theme.id)}
+              >
+                <div class="mb-2 flex gap-1">
+                  {#each theme.palette as color}
+                    <span
+                      class="h-4 flex-1 rounded-sm border border-black/10"
+                      style="background:{color}"
+                    ></span>
+                  {/each}
+                </div>
+                <div class="truncate text-[11px] font-semibold">
+                  {theme.name}
+                </div>
+                <div class="text-muted-foreground text-[10px] capitalize">
+                  {theme.mode}
+                </div>
+              </button>
+            {/each}
+          </div>
+        </div>
+      </aside>
+    </div>
+  {/if}
 </div>
