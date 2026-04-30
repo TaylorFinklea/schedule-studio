@@ -1,13 +1,13 @@
-# CLAUDE.md
+# Schedule Studio — Agent Instructions
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Project-specific guidance for any AI coding agent (Claude Code, Codex, Copilot, etc.). Shared agent behavior lives in `~/AGENTS.md`.
 
 ## Live context
 
 Before substantial work, read `.docs/ai/`:
 - `current-state.md` — what's built and the current build status
 - `decisions.md` — architectural decisions with dates
-- `roadmap.md` and `next-steps.md` — what's next
+- `roadmap.md` — Now / Next / Later
 
 These are kept up to date and supersede anything stale here.
 

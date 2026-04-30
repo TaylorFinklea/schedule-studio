@@ -130,18 +130,10 @@
       : [],
   );
   const maxStart = $derived(
-    Math.min(
-      ...week.days.map(
-        (day) => day.bounds.wakeMinute - day.bounds.bufferBefore,
-      ),
-    ),
+    Math.min(...week.days.map((day) => day.bounds.wakeMinute)),
   );
   const maxEnd = $derived(
-    Math.max(
-      ...week.days.map(
-        (day) => day.bounds.sleepMinute + day.bounds.bufferAfter,
-      ),
-    ),
+    Math.max(...week.days.map((day) => day.bounds.sleepMinute)),
   );
   const totalGridMinutes = $derived(maxEnd - maxStart);
   const horizontalTimelineWidth = $derived(
@@ -696,50 +688,6 @@
                     style={tickStyle(tick)}
                   ></div>
                 {/each}
-                <div
-                  class="absolute right-0 left-0 bg-sky-300/[0.055]"
-                  style={boundsStyle(
-                    day.bounds.wakeMinute - day.bounds.bufferBefore,
-                    day.bounds.wakeMinute,
-                  )}
-                >
-                  <span class="px-3 py-1 text-[10px] text-sky-200/60"
-                    >Buffer</span
-                  >
-                </div>
-                <div
-                  class="absolute right-0 left-0 bg-slate-300/[0.045]"
-                  style={boundsStyle(
-                    day.bounds.sleepMinute,
-                    day.bounds.sleepMinute + day.bounds.bufferAfter,
-                  )}
-                >
-                  <span class="px-3 py-1 text-[10px] text-slate-200/60"
-                    >Buffer</span
-                  >
-                </div>
-                <div
-                  class="absolute right-0 left-0 border-t border-sky-300/20 bg-sky-300/[0.035]"
-                  style={boundsStyle(
-                    day.bounds.wakeMinute,
-                    day.bounds.wakeMinute + 30,
-                  )}
-                >
-                  <span class="px-3 py-1 text-[10px] text-sky-100/55">Wake</span
-                  >
-                </div>
-                <div
-                  class="absolute right-0 left-0 border-t border-slate-200/15 bg-slate-300/[0.04]"
-                  style={boundsStyle(
-                    day.bounds.sleepMinute - 30,
-                    day.bounds.sleepMinute,
-                  )}
-                >
-                  <span class="px-3 py-1 text-[10px] text-slate-100/55"
-                    >Sleep</span
-                  >
-                </div>
-
                 {#if canShowHoverAdd(day) && hoverAdd}
                   {@const add = hoverAdd}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -966,22 +914,6 @@
                       style={horizontalHoverStyle(tick)}
                     ></div>
                   {/each}
-                  <div
-                    class="absolute top-0 bottom-0 bg-sky-300/[0.055]"
-                    style="left:{((day.bounds.wakeMinute -
-                      day.bounds.bufferBefore -
-                      maxStart) /
-                      60) *
-                      hourHeight}px;width:{(day.bounds.bufferBefore / 60) *
-                      hourHeight}px;"
-                  ></div>
-                  <div
-                    class="absolute top-0 bottom-0 bg-slate-300/[0.045]"
-                    style="left:{((day.bounds.sleepMinute - maxStart) / 60) *
-                      hourHeight}px;width:{(day.bounds.bufferAfter / 60) *
-                      hourHeight}px;"
-                  ></div>
-
                   {#if canShowHoverAdd(day) && hoverAdd}
                     {@const add = hoverAdd}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
