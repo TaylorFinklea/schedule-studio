@@ -444,16 +444,8 @@
     return `top:${((startMinute - maxStart) / totalGridMinutes) * 100}%;height:${((endMinute - startMinute) / totalGridMinutes) * 100}%`;
   }
 
-  function hoverAddStyle(minute: number) {
-    return `top:${((minute - maxStart) / totalGridMinutes) * 100}%`;
-  }
-
-  function canShowHoverAdd(day: WeekView["days"][number]) {
-    return !dialogOpen && !dragging && hoverAdd?.weekday === day.weekday;
-  }
-
-  function updateHoverAdd(
-    event: PointerEvent,
+  function handleEmptyClick(
+    event: PointerEvent | MouseEvent,
     weekday: Weekday,
     axis: "vertical" | "horizontal" = "vertical",
   ) {
@@ -463,28 +455,20 @@
       (event.target instanceof Element &&
         event.target.closest("[data-schedule-item]"))
     ) {
-      hoverAdd = null;
       return;
     }
-
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const offset =
       axis === "horizontal"
         ? Math.max(0, Math.min(rect.width, event.clientX - rect.left))
         : Math.max(0, Math.min(rect.height, event.clientY - rect.top));
     const rawMinute = maxStart + (offset / hourHeight) * 60;
-    const maxHoverStart = Math.max(maxStart, maxEnd - HOVER_BLOCK_DURATION);
-    hoverAdd = {
-      weekday,
-      minute: Math.max(
-        maxStart,
-        Math.min(maxHoverStart, snapMinute(rawMinute)),
-      ),
-    };
-  }
-
-  function clearHoverAdd(weekday: Weekday) {
-    if (hoverAdd?.weekday === weekday) hoverAdd = null;
+    const maxStartMinute = Math.max(maxStart, maxEnd - HOVER_BLOCK_DURATION);
+    const minute = Math.max(
+      maxStart,
+      Math.min(maxStartMinute, snapMinute(rawMinute)),
+    );
+    openCreate("block", weekday, minute, HOVER_BLOCK_DURATION);
   }
 
   function beginDrag(
@@ -695,11 +679,11 @@
 
             {#each displayedDays as day}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
               <div
-                class="border-border/80 relative border-r bg-[var(--timeline)]"
+                class="border-border/80 relative cursor-cell border-r bg-[var(--timeline)]"
                 data-testid={`day-column-${day.weekday}`}
-                on:pointermove={(event) => updateHoverAdd(event, day.weekday)}
-                on:pointerleave={() => clearHoverAdd(day.weekday)}
+                on:click={(event) => handleEmptyClick(event, day.weekday)}
               >
                 {#each hourTicks() as tick}
                   <div
@@ -707,50 +691,6 @@
                     style={tickStyle(tick)}
                   ></div>
                 {/each}
-                {#if canShowHoverAdd(day) && hoverAdd}
-                  {@const add = hoverAdd}
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <div
-                    class="absolute right-3 left-3 z-20 flex -translate-y-1/2 items-center gap-2 rounded-md border border-[#7aa2f7]/45 bg-[#1a1b26]/95 px-2 py-1 shadow-xl shadow-black/25 backdrop-blur"
-                    style={hoverAddStyle(add.minute)}
-                    data-testid="hover-add-toolbar"
-                    on:pointerdown|stopPropagation
-                  >
-                    <span class="min-w-12 font-mono text-[11px] text-[#a9b1d6]"
-                      >{formatTime(add.minute)
-                        .replace(" AM", "")
-                        .replace(" PM", "")}</span
-                    >
-                    <button
-                      class="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded border border-[#bb9af7]/35 bg-[#bb9af7]/18 px-2 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/28"
-                      data-testid="hover-add-block"
-                      aria-label={`Add block at ${formatTime(add.minute)} on ${day.dateLabel}`}
-                      on:click|stopPropagation={() =>
-                        openCreate(
-                          "block",
-                          day.weekday,
-                          add.minute,
-                          HOVER_BLOCK_DURATION,
-                        )}
-                    >
-                      <Plus size={13} /> Block
-                    </button>
-                    <button
-                      class="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded border border-[#9ece6a]/30 bg-[#9ece6a]/16 px-2 text-[11px] font-semibold text-[#d3f6aa] hover:bg-[#9ece6a]/24"
-                      data-testid="hover-add-pin"
-                      aria-label={`Add pin at ${formatTime(add.minute)} on ${day.dateLabel}`}
-                      on:click|stopPropagation={() =>
-                        openCreate(
-                          "pin",
-                          day.weekday,
-                          add.minute,
-                          HOVER_BLOCK_DURATION,
-                        )}
-                    >
-                      <Plus size={13} /> Pin
-                    </button>
-                  </div>
-                {/if}
 
                 {#each day.items as item}
                   {@const category = categoryById(item.categoryId)}
@@ -919,13 +859,13 @@
                   </div>
                 </button>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <div
-                  class="absolute top-0 bottom-0 bg-[var(--timeline)]"
+                  class="absolute top-0 bottom-0 cursor-cell bg-[var(--timeline)]"
                   style="left:{HORIZONTAL_LABEL_WIDTH}px;width:{horizontalTimelineWidth}px;"
                   data-testid={`horizontal-day-${day.weekday}`}
-                  on:pointermove={(event) =>
-                    updateHoverAdd(event, day.weekday, "horizontal")}
-                  on:pointerleave={() => clearHoverAdd(day.weekday)}
+                  on:click={(event) =>
+                    handleEmptyClick(event, day.weekday, "horizontal")}
                 >
                   {#each hourTicks() as tick}
                     <div
@@ -933,48 +873,6 @@
                       style={horizontalHoverStyle(tick)}
                     ></div>
                   {/each}
-                  {#if canShowHoverAdd(day) && hoverAdd}
-                    {@const add = hoverAdd}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div
-                      class="absolute top-1 z-50 flex items-center gap-1.5 rounded-md border border-[#7aa2f7]/45 bg-[#1a1b26]/95 px-2 py-1 shadow-xl shadow-black/25 backdrop-blur"
-                      style={horizontalHoverToolbarStyle(add.minute)}
-                      data-testid="hover-add-toolbar"
-                      on:pointerdown|stopPropagation
-                    >
-                      <span class="font-mono text-[11px] text-[#a9b1d6]"
-                        >{formatTime(add.minute)
-                          .replace(" AM", "")
-                          .replace(" PM", "")}</span
-                      >
-                      <button
-                        class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-[#bb9af7]/35 bg-[#bb9af7]/18 px-2 text-[11px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/28"
-                        data-testid="hover-add-block"
-                        on:click|stopPropagation={() =>
-                          openCreate(
-                            "block",
-                            day.weekday,
-                            add.minute,
-                            HOVER_BLOCK_DURATION,
-                          )}
-                      >
-                        <Plus size={13} /> Block
-                      </button>
-                      <button
-                        class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-[#9ece6a]/30 bg-[#9ece6a]/16 px-2 text-[11px] font-semibold text-[#d3f6aa] hover:bg-[#9ece6a]/24"
-                        data-testid="hover-add-pin"
-                        on:click|stopPropagation={() =>
-                          openCreate(
-                            "pin",
-                            day.weekday,
-                            add.minute,
-                            HOVER_BLOCK_DURATION,
-                          )}
-                      >
-                        <Plus size={13} /> Pin
-                      </button>
-                    </div>
-                  {/if}
 
                   {#each day.items as item}
                     {@const category = categoryById(item.categoryId)}
@@ -1080,11 +978,40 @@
         class="border-border bg-surface relative w-full max-w-md rounded-lg border p-5 shadow-2xl shadow-black/40"
         on:click|stopPropagation
       >
-        <div class="mb-4 flex items-center justify-between">
+        <div class="mb-4 flex items-center justify-between gap-3">
           <h2 class="text-[14px] font-semibold tracking-tight">
             {editorMode === "edit" ? "Edit" : "Add"}
             {dialogKind === "pin" ? "pin" : "block"}
           </h2>
+          {#if editorMode === "create"}
+            <div
+              class="bg-muted/40 flex items-center rounded-md p-0.5 text-[11px]"
+              role="group"
+              aria-label="Item kind"
+            >
+              <button
+                type="button"
+                class="rounded px-2 py-1 transition-colors {dialogKind ===
+                'block'
+                  ? 'bg-surface-2 text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'}"
+                aria-pressed={dialogKind === "block"}
+                on:click={() => (dialogKind = "block")}
+              >
+                Block
+              </button>
+              <button
+                type="button"
+                class="rounded px-2 py-1 transition-colors {dialogKind === 'pin'
+                  ? 'bg-surface-2 text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'}"
+                aria-pressed={dialogKind === "pin"}
+                on:click={() => (dialogKind = "pin")}
+              >
+                Pin
+              </button>
+            </div>
+          {/if}
           <button
             class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
             aria-label="Close"
