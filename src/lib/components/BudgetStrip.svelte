@@ -82,17 +82,17 @@
             >
           {/if}
         </span>
-        <span
-          class="tabular-nums {tone === 'muted'
-            ? 'text-muted-foreground/70 italic'
-            : tone === 'ok'
+        {#if budget.mode !== "observation" && budget.deltaMinutes !== null}
+          <span
+            class="tabular-nums {tone === 'ok'
               ? 'text-[#9ece6a]'
               : tone === 'warn'
                 ? 'text-[#e0af68]'
                 : 'text-[#f7768e]'}"
-        >
-          {deltaText(budget)}
-        </span>
+          >
+            {deltaText(budget)}
+          </span>
+        {/if}
       </span>
     {/if}
   {/each}
