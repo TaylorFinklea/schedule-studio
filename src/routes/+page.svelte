@@ -1,26 +1,18 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
-  import { Tooltip } from "bits-ui";
   import { onMount, untrack } from "svelte";
   import {
-    CalendarDays,
     Check,
     ChevronDown,
-    ChevronLeft,
     ChevronRight,
     Clock3,
     Copy,
-    Database,
-    Grid2X2,
-    MoreVertical,
     Plus,
-    Settings,
     Trash2,
-    Undo2,
     X,
-    ZoomIn,
-    ZoomOut,
   } from "lucide-svelte";
+  import AppShell from "$lib/components/AppShell.svelte";
+  import BudgetStrip from "$lib/components/BudgetStrip.svelte";
   import {
     formatDuration,
     formatTime,
@@ -68,7 +60,7 @@
   let visibleDay = $state<Weekday>(4);
   let newVersionName = $state("");
   let hourHeight = $state(DEFAULT_HOUR_HEIGHT);
-  let layoutMode = $state<"vertical" | "horizontal">("vertical");
+  let layoutMode = $state<"vertical" | "horizontal">("horizontal");
   let sidebarPanel = $state<"overview" | "editor" | "settings">("overview");
   let versionsCollapsed = $state(false);
   let categoriesCollapsed = $state(false);
@@ -616,147 +608,22 @@
 <div
   class="bg-background text-foreground flex h-screen flex-col overflow-hidden"
 >
-  <header
-    class="border-border bg-surface flex h-14 shrink-0 items-center gap-3 border-b px-3 shadow-[0_1px_0_rgba(255,255,255,0.03)]"
-  >
-    <div
-      class="border-border bg-muted/50 flex h-8 w-8 items-center justify-center rounded-md border"
-    >
-      <CalendarDays size={17} class="text-muted-foreground" />
-    </div>
-    <h1 class="mr-4 text-[18px] font-semibold tracking-tight">
-      Schedule Studio
-    </h1>
-
-    <button
-      class="border-border bg-muted/35 text-foreground/90 hover:bg-muted h-8 rounded-md border px-3 text-[12px] font-medium"
-    >
-      {week.templateName}
-    </button>
-    <button
-      class="text-muted-foreground hover:bg-muted hover:text-foreground ml-2 rounded-md p-2"
-      title="Previous week"><ChevronLeft size={16} /></button
-    >
-    <button
-      class="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-2"
-      title="Next week"><ChevronRight size={16} /></button
-    >
-    <div class="bg-border h-6 w-px"></div>
-    <div class="text-foreground/90 flex items-center gap-2 text-[13px]">
-      <CalendarDays size={15} class="text-muted-foreground" />
-      <span>{dateRangeLabel()}</span>
-    </div>
-
-    <div class="ml-auto flex items-center gap-2">
-      <button
-        class="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-2"
-        title="Undo"><Undo2 size={15} /></button
-      >
-      <button
-        class="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-2"
-        title="Settings"
-        aria-label="Settings"
-        data-testid="settings-button"
-        on:click={openSettings}><Settings size={15} /></button
-      >
-      <button
-        class="flex h-8 items-center gap-2 rounded-md border border-[#bb9af7]/35 bg-[#bb9af7]/20 px-3 text-[12px] font-semibold text-[#d7c6ff] hover:bg-[#bb9af7]/30"
-        on:click={() => openCreate("block")}
-      >
-        <Plus size={15} /> Add block
-      </button>
-      <button
-        class="flex h-8 items-center gap-2 rounded-md border border-[#9ece6a]/30 bg-[#9ece6a]/16 px-3 text-[12px] font-semibold text-[#d3f6aa] hover:bg-[#9ece6a]/24"
-        on:click={() => openCreate("pin")}
-      >
-        <Plus size={15} /> Add pin
-      </button>
-      <div class="bg-border mx-2 h-6 w-px"></div>
-      <div
-        class="border-border bg-muted/30 flex h-8 items-center rounded-md border p-0.5 text-[11px]"
-      >
-        <button
-          class="h-6 rounded px-2 {layoutMode === 'vertical'
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
-          data-testid="layout-vertical"
-          on:click={() => setLayoutMode("vertical")}
-        >
-          Vertical
-        </button>
-        <button
-          class="h-6 rounded px-2 {layoutMode === 'horizontal'
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
-          data-testid="layout-horizontal"
-          on:click={() => setLayoutMode("horizontal")}
-        >
-          Horizontal
-        </button>
-      </div>
-      <div
-        class="border-border bg-muted/30 text-muted-foreground flex h-8 items-center gap-2 rounded-md border px-2"
-      >
-        <button
-          class="hover:bg-muted hover:text-foreground rounded p-1"
-          title="Zoom out"
-          on:click={() => setZoom(hourHeight - ZOOM_STEP)}
-        >
-          <ZoomOut size={14} />
-        </button>
-        <input
-          class="h-1.5 w-24 accent-[#7aa2f7]"
-          aria-label="Timeline zoom"
-          type="range"
-          min={MIN_HOUR_HEIGHT}
-          max={MAX_HOUR_HEIGHT}
-          step={ZOOM_STEP}
-          value={hourHeight}
-          on:input={(event) => setZoom(Number(event.currentTarget.value))}
-        />
-        <button
-          class="hover:bg-muted hover:text-foreground rounded p-1"
-          title="Zoom in"
-          on:click={() => setZoom(hourHeight + ZOOM_STEP)}
-        >
-          <ZoomIn size={14} />
-        </button>
-        <button
-          class="hover:bg-muted hover:text-foreground min-w-10 rounded px-1 text-[11px] font-medium tabular-nums"
-          title="Reset zoom"
-          on:click={() => setZoom(DEFAULT_HOUR_HEIGHT)}
-        >
-          {zoomPercent()}%
-        </button>
-      </div>
-      <label
-        class="border-border bg-muted/30 text-muted-foreground flex h-8 items-center gap-2 rounded-md border px-3 text-[12px] has-checked:border-[#7aa2f7]/60 has-checked:text-[#c0caf5]"
-      >
-        Day focus
-        <input class="sr-only" type="checkbox" bind:checked={dayFocus} />
-        <span
-          class="border-border bg-surface-2 flex h-4 w-4 items-center justify-center rounded-full border"
-        >
-          {#if dayFocus}<Check size={11} />{/if}
-        </span>
-      </label>
-      <button
-        class="border-border bg-muted/30 text-muted-foreground hover:text-foreground rounded-md border p-2"
-        title="Overview"
-        aria-label="Overview"
-        on:click={() => {
-          dialogOpen = false;
-          sidebarPanel = "overview";
-        }}><Grid2X2 size={16} /></button
-      >
-      <button
-        class="border-border bg-muted/30 text-muted-foreground hover:text-foreground rounded-md border p-2"
-        title="More settings"
-        aria-label="More settings"
-        on:click={openSettings}><MoreVertical size={16} /></button
-      >
-    </div>
-  </header>
+  <AppShell
+    versionLabel={week.templateName}
+    weekRangeLabel={dateRangeLabel()}
+    {layoutMode}
+    {hourHeight}
+    defaultZoom={DEFAULT_HOUR_HEIGHT}
+    zoomStep={ZOOM_STEP}
+    onLayoutChange={setLayoutMode}
+    onZoomChange={setZoom}
+    onAdd={() => openCreate("block")}
+    onMenu={openSettings}
+  />
+  <BudgetStrip
+    categories={week.categories}
+    budgets={week.categoryBudgets}
+  />
 
   <main class="flex min-h-0 flex-1">
     <section class="flex min-w-0 flex-1 flex-col">
@@ -1661,31 +1528,4 @@
     </aside>
   </main>
 
-  <footer
-    class="border-border bg-surface text-muted-foreground flex h-10 shrink-0 items-center gap-5 border-t px-4 text-[12px]"
-  >
-    <span class="inline-flex items-center gap-2"
-      ><span class="h-2.5 w-2.5 rounded-full bg-[#9ece6a]"></span>Local only</span
-    >
-    <Tooltip.Provider delayDuration={250}>
-      <Tooltip.Root>
-        <Tooltip.Trigger
-          class="hover:text-foreground focus-visible:ring-ring inline-flex items-center gap-2 rounded-sm outline-none focus-visible:ring-2"
-        >
-          <Database size={14} />SQLite
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content
-            side="top"
-            class="border-border bg-popover text-popover-foreground z-50 rounded-md border px-3 py-2 text-[12px] shadow-xl"
-          >
-            Runtime data stays in ignored local SQLite files.
-            <Tooltip.Arrow class="fill-popover" />
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
-    <span class="mx-auto">5-minute grid · {zoomPercent()}% zoom</span>
-    <span>All data is stored locally on this device.</span>
-  </footer>
 </div>
