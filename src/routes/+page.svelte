@@ -985,8 +985,8 @@
                       class="focus:ring-ring absolute z-10 overflow-hidden rounded-[5px] text-left transition-shadow focus:outline-none {isSelected
                         ? 'ring-1 ring-[#7aa2f7]/70 shadow-md shadow-black/30'
                         : 'hover:bg-white/[0.02]'} {item.kind === 'pin'
-                        ? 'top-1/2 -translate-y-1/2 z-20 flex h-5 items-center gap-1.5 px-1.5'
-                        : 'top-2 bottom-2 pl-2.5 pr-2 border-l-2'}"
+                        ? 'top-1 z-20 flex h-5 items-center gap-1.5 px-1.5'
+                        : 'top-8 bottom-2 pl-2.5 pr-2 border-l-2'}"
                       style="{horizontalItemStyle(item)} {item.kind === 'pin'
                         ? `background:${category.color}1a; border:1px solid ${category.color}55;`
                         : `border-left-color:${category.color}; background:${category.color}14;`}"
