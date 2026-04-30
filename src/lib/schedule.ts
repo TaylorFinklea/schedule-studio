@@ -1,5 +1,6 @@
 import type {
   Category,
+  CategoryBudget,
   CategoryTotal,
   DailyTotal,
   OverlapWarning,
@@ -67,7 +68,7 @@ export function formatDuration(minutes: number): string {
 }
 
 export function itemDuration(item: ScheduleItem): number {
-  if (item.kind !== "block" || item.endMinute === null) return 0;
+  if (item.endMinute === null) return 0;
   return Math.max(0, item.endMinute - item.startMinute);
 }
 
@@ -90,6 +91,29 @@ export function calculateDailyTotals(items: ScheduleItem[]): DailyTotal[] {
       .filter((item) => item.weekday === weekday)
       .reduce((sum, item) => sum + itemDuration(item), 0),
   }));
+}
+
+export function calculateCategoryBudgets(
+  weeklyTotals: CategoryTotal[],
+  categories: Category[],
+): CategoryBudget[] {
+  return categories.map((category) => {
+    const actualMinutes =
+      weeklyTotals.find((total) => total.categoryId === category.id)?.minutes ??
+      0;
+    const targetMinutes = category.targetMinutes ?? null;
+    const deltaMinutes =
+      category.budgetMode === "observation" || targetMinutes === null
+        ? null
+        : actualMinutes - targetMinutes;
+    return {
+      categoryId: category.id,
+      mode: category.budgetMode,
+      targetMinutes,
+      actualMinutes,
+      deltaMinutes,
+    };
+  });
 }
 
 export function findOverlaps(items: ScheduleItem[]): OverlapWarning[] {

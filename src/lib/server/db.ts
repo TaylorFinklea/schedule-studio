@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
+  BudgetMode,
+  CategoryUpdate,
   DayBounds,
   ItemInput,
   ScheduleItem,
@@ -11,7 +13,9 @@ import type {
   Weekday,
   WeekView,
 } from "$lib/types";
+import { PIN_DEFAULT_MINUTES, PIN_MAX_MINUTES } from "$lib/types";
 import {
+  calculateCategoryBudgets,
   calculateDailyTotals,
   calculateWeeklyTotals,
   clampMinute,
@@ -29,6 +33,8 @@ type CategoryRow = {
   color: string;
   sort_order: number;
   archived: 0 | 1;
+  budget_mode: BudgetMode;
+  target_minutes: number | null;
 };
 
 type BoundsRow = {
@@ -62,7 +68,7 @@ type ItemRow = {
 };
 
 const DEFAULT_TEMPLATE_ID = "template-week";
-const MIGRATION_VERSION = "0001_initial";
+const MIGRATIONS = ["0001_initial", "0002_redesign"] as const;
 
 type SqliteDatabase = InstanceType<typeof DatabaseSync>;
 
@@ -88,19 +94,30 @@ export function getDb() {
 }
 
 function runMigrations(db: SqliteDatabase) {
-  const migration = readFileSync(
-    join(process.cwd(), "migrations", "0001_initial.sql"),
-    "utf8",
-  );
-  db.exec(migration);
-  const exists = db
-    .prepare("SELECT version FROM schema_migrations WHERE version = ?")
-    .get(MIGRATION_VERSION);
-  if (!exists) {
-    db.prepare("INSERT INTO schema_migrations (version) VALUES (?)").run(
-      MIGRATION_VERSION,
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+  `);
+
+  const checkApplied = db.prepare(
+    "SELECT version FROM schema_migrations WHERE version = ?",
+  );
+  const recordApplied = db.prepare(
+    "INSERT INTO schema_migrations (version) VALUES (?)",
+  );
+
+  for (const version of MIGRATIONS) {
+    if (checkApplied.get(version)) continue;
+    const sql = readFileSync(
+      join(process.cwd(), "migrations", `${version}.sql`),
+      "utf8",
+    );
+    db.exec(sql);
+    recordApplied.run(version);
   }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
@@ -429,6 +446,8 @@ export function getWeekView(dateParam?: string): WeekView {
     color: row.color,
     sortOrder: row.sort_order,
     archived: Boolean(row.archived),
+    budgetMode: row.budget_mode,
+    targetMinutes: row.target_minutes,
   }));
   const boundsRows = db
     .prepare("SELECT * FROM day_bounds WHERE template_id = ? ORDER BY weekday")
@@ -470,14 +489,15 @@ export function getWeekView(dateParam?: string): WeekView {
       totalMinutes: dayItems.reduce(
         (sum, item) =>
           sum +
-          (item.kind === "block" && item.endMinute
-            ? item.endMinute - item.startMinute
+          (item.endMinute !== null
+            ? Math.max(0, item.endMinute - item.startMinute)
             : 0),
         0,
       ),
     };
   });
 
+  const weeklyTotals = calculateWeeklyTotals(items, categories);
   return {
     templateId: template.id,
     templateName: template.name,
@@ -487,8 +507,9 @@ export function getWeekView(dateParam?: string): WeekView {
     versions: templateSummaries(db),
     days,
     categories,
-    weeklyTotals: calculateWeeklyTotals(items, categories),
+    weeklyTotals,
     dailyTotals: calculateDailyTotals(items),
+    categoryBudgets: calculateCategoryBudgets(weeklyTotals, categories),
     overlapWarnings: findOverlaps(items),
   };
 }
@@ -503,17 +524,28 @@ export function upsertItem(input: ItemInput): ScheduleItem {
           .get(input.id) as { template_id: string } | undefined
       )?.template_id ?? activeTemplateId(db))
     : activeTemplateId(db);
+  const snappedStart = snapMinute(input.startMinute);
   const startMinute =
     input.kind === "block"
-      ? Math.min(24 * 60 - SNAP_MINUTES, snapMinute(input.startMinute))
-      : snapMinute(input.startMinute);
-  const endMinute =
-    input.kind === "pin"
-      ? null
-      : Math.max(
-          startMinute + SNAP_MINUTES,
-          snapMinute(clampMinute(input.endMinute ?? startMinute + 60)),
-        );
+      ? Math.min(24 * 60 - SNAP_MINUTES, snappedStart)
+      : snappedStart;
+  let endMinute: number;
+  if (input.kind === "block") {
+    endMinute = Math.max(
+      startMinute + SNAP_MINUTES,
+      snapMinute(clampMinute(input.endMinute ?? startMinute + 60)),
+    );
+  } else {
+    const requestedDuration =
+      input.endMinute != null
+        ? input.endMinute - startMinute
+        : PIN_DEFAULT_MINUTES;
+    const duration = Math.max(
+      1,
+      Math.min(PIN_MAX_MINUTES, Math.round(requestedDuration)),
+    );
+    endMinute = startMinute + duration;
+  }
   db.prepare(
     `INSERT INTO schedule_items
       (id, template_id, kind, title, weekday, start_minute, end_minute, category_id, notes, completed, source, created_at, updated_at)
@@ -550,14 +582,30 @@ export function deleteItem(id: string) {
   getDb().prepare("DELETE FROM schedule_items WHERE id = ?").run(id);
 }
 
-export function updateCategory(input: {
-  id: string;
-  name: string;
-  color: string;
-}) {
+export function updateCategory(input: CategoryUpdate) {
+  const sets: string[] = [];
+  const values: (string | number | null)[] = [];
+  if (input.name !== undefined) {
+    sets.push("name = ?");
+    values.push(input.name);
+  }
+  if (input.color !== undefined) {
+    sets.push("color = ?");
+    values.push(input.color);
+  }
+  if (input.budgetMode !== undefined) {
+    sets.push("budget_mode = ?");
+    values.push(input.budgetMode);
+  }
+  if (input.targetMinutes !== undefined) {
+    sets.push("target_minutes = ?");
+    values.push(input.targetMinutes);
+  }
+  if (sets.length === 0) return;
+  values.push(input.id);
   getDb()
-    .prepare("UPDATE categories SET name = ?, color = ? WHERE id = ?")
-    .run(input.name, input.color, input.id);
+    .prepare(`UPDATE categories SET ${sets.join(", ")} WHERE id = ?`)
+    .run(...values);
 }
 
 export function updateDayBounds(input: DayBounds) {

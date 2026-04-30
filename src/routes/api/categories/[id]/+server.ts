@@ -1,8 +1,26 @@
 import { json } from "@sveltejs/kit";
 import { updateCategory } from "$lib/server/db";
+import type { BudgetMode } from "$lib/types";
+
+const VALID_MODES: BudgetMode[] = ["target", "minimum", "observation"];
 
 export async function PUT({ params, request }) {
   const payload = await request.json();
-  updateCategory({ id: params.id, name: payload.name, color: payload.color });
+  const update: Parameters<typeof updateCategory>[0] = { id: params.id };
+  if (typeof payload.name === "string") update.name = payload.name;
+  if (typeof payload.color === "string") update.color = payload.color;
+  if (
+    typeof payload.budgetMode === "string" &&
+    VALID_MODES.includes(payload.budgetMode as BudgetMode)
+  ) {
+    update.budgetMode = payload.budgetMode as BudgetMode;
+  }
+  if (
+    payload.targetMinutes === null ||
+    typeof payload.targetMinutes === "number"
+  ) {
+    update.targetMinutes = payload.targetMinutes;
+  }
+  updateCategory(update);
   return json({ ok: true });
 }
