@@ -1,0 +1,26 @@
+name: Schedule Studio
+version: "0.1.0"
+slug: schedule_studio
+description: Local-first weekly planning with schedule versions and SQLite persistence.
+url: https://github.com/TaylorFinklea/schedule-studio
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+image: ghcr.io/taylorfinklea/schedule-studio
+ingress: true
+ingress_port: 3000
+panel_icon: mdi:calendar-clock
+ports:
+  3000/tcp: null
+ports_description:
+  3000/tcp: Schedule Studio web interface
+environment:
+  NODE_ENV: production
+  HOST: 0.0.0.0
+  PORT: "3000"
+  SCHEDULE_STUDIO_DB: /data/schedule-studio.sqlite
+watchdog: http://[HOST]:[PORT:3000]/healthz
+schema: false

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:25-slim AS build
+FROM node:24-slim AS build
 
 WORKDIR /app
 
@@ -15,7 +15,15 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-FROM node:25-slim AS runtime
+FROM node:24-slim AS runtime
+
+ARG BUILD_VERSION=dev
+ARG BUILD_ARCH="amd64|aarch64"
+
+LABEL \
+  io.hass.version="${BUILD_VERSION}" \
+  io.hass.type="app" \
+  io.hass.arch="${BUILD_ARCH}"
 
 WORKDIR /app
 
@@ -35,5 +43,8 @@ USER node
 
 VOLUME ["/data"]
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/healthz').then((res) => { if (!res.ok) process.exit(1); }).catch(() => process.exit(1))"
 
 CMD ["node", "build"]

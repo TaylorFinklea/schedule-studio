@@ -32,7 +32,9 @@
     Weekday,
   } from "$lib/types";
 
-  let { data } = $props<{ data: { week: WeekView } }>();
+  type PageData = { ingressPath: string; week: WeekView };
+
+  let { data } = $props<{ data: PageData }>();
 
   const DEFAULT_HOUR_HEIGHT = 128;
   const MIN_HOUR_HEIGHT = 72;
@@ -47,6 +49,11 @@
   const HORIZONTAL_PIN_LANE_HEIGHT = 30;
   const HOVER_TOOLBAR_WIDTH = 252;
 
+  const ingressPath = $derived(data.ingressPath);
+
+  function apiPath(path: string) {
+    return `${ingressPath}${path}`;
+  }
   // svelte-ignore state_referenced_locally -- local planner state is resynced from loader data below after mutations.
   let week = $state<WeekView>(data.week);
   let selectedId = $state<string | null>(null);
@@ -266,8 +273,8 @@
     if (!payload) return;
     const url =
       editorMode === "edit" && editingId
-        ? `/api/items/${editingId}`
-        : "/api/items";
+        ? apiPath(`/api/items/${editingId}`)
+        : apiPath("/api/items");
     const item = await fetch(url, {
       method: editorMode === "edit" && editingId ? "PUT" : "POST",
       headers: { "content-type": "application/json" },
@@ -281,7 +288,7 @@
 
   async function deleteEditingItem() {
     if (!editingId) return;
-    await fetch(`/api/items/${editingId}`, { method: "DELETE" });
+    await fetch(apiPath(`/api/items/${editingId}`), { method: "DELETE" });
     dialogOpen = false;
     sidebarPanel = "overview";
     selectedId = null;
@@ -289,7 +296,7 @@
   }
 
   async function persistItem(item: ScheduleItem) {
-    await fetch(`/api/items/${item.id}`, {
+    await fetch(apiPath(`/api/items/${item.id}`), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(item),
@@ -299,7 +306,7 @@
 
   async function deleteSelected() {
     if (!selected) return;
-    await fetch(`/api/items/${selected.id}`, { method: "DELETE" });
+    await fetch(apiPath(`/api/items/${selected.id}`), { method: "DELETE" });
     selectedId = null;
     await invalidateAll();
   }
@@ -315,7 +322,7 @@
         ? snapMinute(selected.endMinute + 30)
         : null,
     };
-    await fetch("/api/items", {
+    await fetch(apiPath("/api/items"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(copy),
@@ -324,7 +331,7 @@
   }
 
   async function createSandboxVersion(name: string) {
-    await fetch("/api/versions", {
+    await fetch(apiPath("/api/versions"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name, sourceTemplateId: week.templateId }),
@@ -335,7 +342,7 @@
   }
 
   async function activateVersion(id: string) {
-    await fetch(`/api/versions/${id}`, {
+    await fetch(apiPath(`/api/versions/${id}`), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "activate" }),
@@ -346,7 +353,7 @@
 
   async function renameVersion(id: string, name: string) {
     if (!name) return;
-    await fetch(`/api/versions/${id}`, {
+    await fetch(apiPath(`/api/versions/${id}`), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name }),
@@ -356,7 +363,7 @@
 
   async function deleteVersion(id: string) {
     if (id === week.defaultTemplateId) return;
-    await fetch(`/api/versions/${id}`, { method: "DELETE" });
+    await fetch(apiPath(`/api/versions/${id}`), { method: "DELETE" });
     selectedId = null;
     versionMenuOpen = false;
     await invalidateAll();
@@ -371,7 +378,7 @@
       targetMinutes?: number | null;
     },
   ) {
-    await fetch(`/api/categories/${id}`, {
+    await fetch(apiPath(`/api/categories/${id}`), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),

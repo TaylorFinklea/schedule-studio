@@ -42,7 +42,13 @@ pnpm dev
 docker compose up --build
 ```
 
-The container listens on `http://localhost:3000` and stores SQLite data in the `schedule-studio-data` Docker volume. Override the database path with `SCHEDULE_STUDIO_DB` if you run the image without Compose.
+The container listens on `http://localhost:3000`, exposes `/healthz`, and stores SQLite data in the `schedule-studio-data` Docker volume. Override the database path with `SCHEDULE_STUDIO_DB` if you run the image without Compose.
+
+## Home Assistant
+
+This repository can be added to Home Assistant as an add-on repository. The add-on metadata lives in `home-assistant/schedule-studio/` and points to `ghcr.io/taylorfinklea/schedule-studio`.
+
+The add-on opens through Home Assistant Ingress, does not publish port `3000` to the host by default, and stores SQLite data at `/data/schedule-studio.sqlite` so it persists across restarts and is included in Home Assistant backups.
 
 ## Checks
 

@@ -9,6 +9,7 @@
 - [x] Convert schedule editing to 5-minute precision with deeper zoom.
 - [x] Add unified item editing, horizontal timeline mode, and built-in themes.
 - [x] Move item editing and settings into the right sidebar; add collapsible sidebar totals.
+- [x] Package the app as a Home Assistant add-on with Ingress and persistent `/data` SQLite storage.
 - [ ] Improve drag/drop between day columns.
 - [ ] Add full date-specific override workflow.
 
