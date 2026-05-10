@@ -1049,6 +1049,13 @@ export function activateVersion(id: string) {
   setSetting(db, "active_template_id", id);
 }
 
+export function setDefaultVersion(id: string) {
+  const db = getDb();
+  const exists = db.prepare("SELECT id FROM templates WHERE id = ?").get(id);
+  if (!exists) throw new Error("Schedule version not found");
+  setSetting(db, "default_template_id", id);
+}
+
 export function renameVersion(id: string, name: string) {
   const db = getDb();
   db.prepare(

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, Plus, Trash2, X } from "lucide-svelte";
+  import { Check, Plus, Star, Trash2, X } from "lucide-svelte";
   import type { ScheduleVersion } from "$lib/types";
   import { formatDuration } from "$lib/schedule";
 
@@ -11,10 +11,11 @@
     onCreate: (name: string) => void;
     onRename: (id: string, name: string) => void;
     onDelete: (id: string) => void;
+    onSetDefault: (id: string) => void;
     onClose: () => void;
   };
 
-  let { versions, activeId, defaultId, onActivate, onCreate, onRename, onDelete, onClose }: Props =
+  let { versions, activeId, defaultId, onActivate, onCreate, onRename, onDelete, onSetDefault, onClose }: Props =
     $props();
 
   let newName = $state("");
@@ -106,6 +107,18 @@
           {#if version.id !== defaultId}
             <button
               type="button"
+              class="text-muted-foreground hover:bg-amber-500/10 hover:text-amber-300 flex shrink-0 items-center justify-center px-2 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+              aria-label="Set {version.name} as default"
+              data-testid="version-set-default-{version.id}"
+              onclick={(event) => {
+                event.stopPropagation();
+                onSetDefault(version.id);
+              }}
+            >
+              <Star size={13} />
+            </button>
+            <button
+              type="button"
               class="text-muted-foreground hover:bg-red-500/10 hover:text-red-300 flex shrink-0 items-center justify-center px-2 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
               aria-label="Delete sandbox {version.name}"
               data-testid="version-delete-{version.id}"
@@ -175,6 +188,14 @@
           </button>
         </form>
         {#if active.id !== defaultId}
+          <button
+            type="button"
+            class="flex w-full items-center justify-center gap-1.5 rounded-md border border-amber-400/30 px-3 py-1.5 text-[12px] text-amber-300 hover:bg-amber-500/10"
+            data-testid="version-set-default-active"
+            onclick={() => onSetDefault(active.id)}
+          >
+            <Star size={13} /> Set as default
+          </button>
           <button
             type="button"
             class="flex w-full items-center justify-center gap-1.5 rounded-md border border-red-400/30 px-3 py-1.5 text-[12px] text-red-300 hover:bg-red-500/10"

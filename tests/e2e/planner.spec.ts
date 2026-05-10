@@ -62,6 +62,57 @@ test("the version menu lists schedule versions", async ({ page }) => {
   await expect(page.getByLabel("New sandbox name")).toBeVisible();
 });
 
+test("set default promotes a sandbox and allows deleting the old default", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await page.getByTestId("version-menu").click();
+
+  // Create a new sandbox
+  await page.getByLabel("New sandbox name").fill("Promote me");
+  await page.getByRole("button", { name: "Create sandbox" }).click();
+  await page.waitForLoadState("networkidle");
+
+  // Re-open the version menu (creating a sandbox closes it)
+  await page.getByTestId("version-menu").click();
+
+  // The new sandbox should be active and listed
+  await expect(
+    page.locator("button", { hasText: "Promote me" }).first(),
+  ).toBeVisible();
+
+  // Set it as default (menu stays open)
+  await page.getByTestId("version-set-default-active").click();
+  await page.waitForLoadState("networkidle");
+
+  // The old default (seeded template) should now be deletable
+  const oldDefault = page
+    .locator("li", { hasText: "Fictional planning template" })
+    .first();
+  await oldDefault.hover();
+  await expect(
+    oldDefault.locator('[data-testid^="version-delete-"]'),
+  ).toBeVisible();
+
+  // Restore original default so other tests aren't affected
+  await oldDefault
+    .locator('[data-testid^="version-set-default-"]')
+    .click();
+  await page.waitForLoadState("networkidle");
+
+  // Delete the sandbox we created (menu is still open)
+  page.on("dialog", (dialog) => dialog.accept());
+  const sandbox = page.locator("li", { hasText: "Promote me" }).first();
+  await sandbox.hover();
+  await sandbox.locator('[data-testid^="version-delete-"]').click();
+  await page.waitForLoadState("networkidle");
+
+  // Confirm the sandbox is gone (menu closed on delete, reopen to verify)
+  await page.getByTestId("version-menu").click();
+  await expect(sandbox).not.toBeVisible();
+});
+
 test("settings drawer exposes both calm themes and persists the choice", async ({
   page,
 }) => {

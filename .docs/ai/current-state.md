@@ -6,7 +6,7 @@ Schedule Studio is a public MIT-licensed SvelteKit app with local SQLite persist
 
 ## Build Status
 
-Latest verification: `pnpm check`, `pnpm test`, `pnpm build`, local Docker image build, `/healthz` container smoke test, Home Assistant Ingress header smoke test. `pnpm test:e2e` was not run in the latest session.
+Latest verification: `pnpm check`, `pnpm test`, `pnpm build`, local Docker image build, `/healthz` container smoke test, Home Assistant Ingress header smoke test. `pnpm test:e2e` was run; the new "set default" test passes, and pre-existing e2e failures (todo-sidebar "Add" button colliding with toolbar "Add" button locator in existing tests) are unrelated to this change.
 
 ## Notes
 

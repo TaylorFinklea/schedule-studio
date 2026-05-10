@@ -496,6 +496,15 @@
     await invalidateAll();
   }
 
+  async function setDefaultVersion(id: string) {
+    await fetch(apiPath(`/api/versions/${id}`), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "set-default" }),
+    });
+    await invalidateAll();
+  }
+
   async function deleteVersion(id: string) {
     if (id === week.defaultTemplateId) return;
     await fetch(apiPath(`/api/versions/${id}`), { method: "DELETE" });
@@ -1929,6 +1938,7 @@
       onCreate={createSandboxVersion}
       onRename={renameVersion}
       onDelete={deleteVersion}
+      onSetDefault={setDefaultVersion}
       onClose={() => (versionMenuOpen = false)}
     />
   {/if}
