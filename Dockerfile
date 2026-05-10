@@ -32,14 +32,12 @@ ENV HOST=0.0.0.0
 ENV PORT=3000
 ENV SCHEDULE_STUDIO_DB=/data/schedule-studio.sqlite
 
-RUN mkdir -p /data && chown -R node:node /data /app
+RUN mkdir -p /data
 
-COPY --from=build --chown=node:node /app/build ./build
-COPY --from=build --chown=node:node /app/migrations ./migrations
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/package.json ./package.json
-
-USER node
+COPY --from=build /app/build ./build
+COPY --from=build /app/migrations ./migrations
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./package.json
 
 VOLUME ["/data"]
 EXPOSE 3000

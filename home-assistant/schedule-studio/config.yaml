@@ -1,5 +1,5 @@
 name: Schedule Studio
-version: "0.1.0"
+version: "0.1.1"
 slug: schedule_studio
 description: Local-first weekly planning with schedule versions and SQLite persistence.
 url: https://github.com/TaylorFinklea/schedule-studio
