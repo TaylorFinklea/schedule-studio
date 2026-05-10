@@ -38,6 +38,13 @@
     if (!next || !active || next === active.name) return;
     onRename(active.id, next);
   }
+
+  function confirmDelete(version: ScheduleVersion) {
+    const ok = window.confirm(
+      `Delete sandbox "${version.name}"? Its ${version.itemCount} items will be removed. This cannot be undone.`,
+    );
+    if (ok) onDelete(version.id);
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -68,13 +75,15 @@
 
     <ul class="mb-4 space-y-1">
       {#each versions as version (version.id)}
-        <li>
+        <li
+          class="border-border hover:bg-muted/50 group relative flex items-stretch overflow-hidden rounded-md border {version.id ===
+          activeId
+            ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/12'
+            : 'border-transparent'}"
+        >
           <button
             type="button"
-            class="border-border hover:bg-muted/50 flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-[12px] {version.id ===
-            activeId
-              ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/12'
-              : 'border-transparent'}"
+            class="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-[12px]"
             onclick={() => onActivate(version.id)}
           >
             <span
@@ -94,6 +103,20 @@
               <Check size={14} class="text-[#7aa2f7]" />
             {/if}
           </button>
+          {#if version.id !== defaultId}
+            <button
+              type="button"
+              class="text-muted-foreground hover:bg-red-500/10 hover:text-red-300 flex shrink-0 items-center justify-center px-2 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+              aria-label="Delete sandbox {version.name}"
+              data-testid="version-delete-{version.id}"
+              onclick={(event) => {
+                event.stopPropagation();
+                confirmDelete(version);
+              }}
+            >
+              <Trash2 size={13} />
+            </button>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -155,7 +178,7 @@
           <button
             type="button"
             class="flex w-full items-center justify-center gap-1.5 rounded-md border border-red-400/30 px-3 py-1.5 text-[12px] text-red-300 hover:bg-red-500/10"
-            onclick={() => onDelete(active.id)}
+            onclick={() => confirmDelete(active)}
           >
             <Trash2 size={13} /> Delete sandbox
           </button>

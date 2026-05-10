@@ -1,19 +1,11 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
   import { onMount, untrack } from "svelte";
-  import {
-    Check,
-    ChevronDown,
-    ChevronRight,
-    Clock3,
-    Copy,
-    Plus,
-    Trash2,
-    X,
-  } from "lucide-svelte";
+  import { X } from "lucide-svelte";
   import AppShell from "$lib/components/AppShell.svelte";
   import BudgetStrip from "$lib/components/BudgetStrip.svelte";
   import CategoryEditor from "$lib/components/CategoryEditor.svelte";
+  import TodoSidebar from "$lib/components/TodoSidebar.svelte";
   import VersionMenu from "$lib/components/VersionMenu.svelte";
   import {
     formatDuration,
@@ -26,8 +18,10 @@
   import type {
     Category,
     ItemInput,
+    ItemKind,
     OverlapWarning,
     ScheduleItem,
+    Todo,
     WeekView,
     Weekday,
   } from "$lib/types";
@@ -46,14 +40,12 @@
   const HOVER_BLOCK_DURATION = 30;
   const HORIZONTAL_LABEL_WIDTH = 96;
   const HORIZONTAL_ROW_HEIGHT = 112;
-  const HORIZONTAL_PIN_LANE_HEIGHT = 30;
-  const HOVER_TOOLBAR_WIDTH = 252;
-
   const ingressPath = $derived(data.ingressPath);
 
   function apiPath(path: string) {
     return `${ingressPath}${path}`;
   }
+
   // svelte-ignore state_referenced_locally -- local planner state is resynced from loader data below after mutations.
   let week = $state<WeekView>(data.week);
   let selectedId = $state<string | null>(null);
@@ -64,20 +56,32 @@
   let draft = $state<ItemInput>(newDraft("block", 1, 9 * 60));
   let draftStartTime = $state(formatTime(9 * 60));
   let draftEndTime = $state(formatTime(10 * 60));
+  let draftWeekdays = $state<Weekday[]>([1]);
+  const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"] as const;
+
+  function toggleDraftWeekday(weekday: Weekday) {
+    if (draftWeekdays.includes(weekday)) {
+      draftWeekdays = draftWeekdays.filter((w) => w !== weekday);
+    } else {
+      draftWeekdays = [...draftWeekdays, weekday].sort((a, b) => a - b);
+    }
+  }
   let editorError = $state("");
-  let dayFocus = $state(false);
   let visibleDay = $state<Weekday>(4);
-  let newVersionName = $state("");
   let hourHeight = $state(DEFAULT_HOUR_HEIGHT);
   let layoutMode = $state<"vertical" | "horizontal">("horizontal");
-  let sidebarPanel = $state<"overview" | "editor" | "settings">("overview");
+  let settingsOpen = $state(false);
   let versionMenuOpen = $state(false);
   let editorAnchor = $state<{ x: number; y: number } | null>(null);
-  let versionsCollapsed = $state(false);
-  let categoriesCollapsed = $state(false);
-  let dailyTotalsCollapsed = $state(false);
+  let dayBoundsEditor = $state<{
+    weekday: Weekday;
+    anchor: { x: number; y: number };
+    wakeText: string;
+    sleepText: string;
+    error: string;
+  } | null>(null);
+  let categoryDeleteError = $state("");
   let themeId = $state(DEFAULT_THEME_ID);
-  let hoverAdd = $state<{ weekday: Weekday; minute: number } | null>(null);
   let dragging = $state<{
     id: string;
     mode: "move" | "resize-start" | "resize-end";
@@ -86,6 +90,30 @@
     originStart: number;
     originEnd: number | null;
     originWeekday: Weekday;
+  } | null>(null);
+  let dragMoved = $state(false);
+  let appToast = $state<string | null>(null);
+  let appToastTimer: ReturnType<typeof setTimeout> | null = null;
+  function showToast(message: string) {
+    appToast = message;
+    if (appToastTimer) clearTimeout(appToastTimer);
+    appToastTimer = setTimeout(() => {
+      appToast = null;
+      appToastTimer = null;
+    }, 2400);
+  }
+  let drawing = $state<{
+    weekday: Weekday;
+    axis: "vertical" | "horizontal";
+    originX: number;
+    originY: number;
+    rectLeft: number;
+    rectTop: number;
+    rectWidth: number;
+    rectHeight: number;
+    startMinute: number;
+    endMinute: number;
+    moved: boolean;
   } | null>(null);
 
   $effect(() => {
@@ -150,10 +178,13 @@
   const horizontalTimelineWidth = $derived(
     (totalGridMinutes / 60) * hourHeight,
   );
-  const displayedDays = $derived(
-    dayFocus
-      ? week.days.filter((day) => day.weekday === visibleDay)
-      : week.days,
+  const displayedDays = $derived(week.days);
+  const categoryInUseIds = $derived(
+    new Set(
+      Object.entries(week.categoryUsage)
+        .filter(([, count]) => count > 0)
+        .map(([id]) => id),
+    ),
   );
 
   function allItems(): ScheduleItem[] {
@@ -188,8 +219,20 @@
         kind === "pin" ? null : Math.min(24 * 60, startMinute + duration),
       categoryId: week?.categories?.[0]?.id ?? "deep-work",
       notes: "",
-      completed: false,
+      seriesId: null,
     };
+  }
+
+  function siblingWeekdaysFor(item: ScheduleItem): Weekday[] {
+    if (!item.seriesId) return [item.weekday];
+    const found = new Set<Weekday>();
+    for (const day of week.days) {
+      for (const it of day.items) {
+        if (it.seriesId === item.seriesId) found.add(it.weekday);
+      }
+    }
+    if (found.size === 0) found.add(item.weekday);
+    return Array.from(found).sort((a, b) => a - b) as Weekday[];
   }
 
   function openCreate(
@@ -204,13 +247,17 @@
     draft = newDraft(kind, weekday, startMinute, duration);
     draftStartTime = formatTime(draft.startMinute);
     draftEndTime = formatTime(draft.endMinute ?? draft.startMinute + duration);
+    draftWeekdays = [weekday];
     editorError = "";
-    hoverAdd = null;
     dialogOpen = true;
-    sidebarPanel = "editor";
   }
 
   function openEdit(item: ScheduleItem, event?: MouseEvent | PointerEvent) {
+    if (dragMoved) {
+      // Suppress the click that fires at the end of a drag.
+      dragMoved = false;
+      return;
+    }
     editorMode = "edit";
     editingId = item.id;
     dialogKind = item.kind;
@@ -223,8 +270,9 @@
       endMinute: item.endMinute,
       categoryId: item.categoryId,
       notes: item.notes,
-      completed: item.completed,
+      seriesId: item.seriesId,
     };
+    draftWeekdays = siblingWeekdaysFor(item);
     draftStartTime = formatTime(item.startMinute);
     draftEndTime = formatTime(item.endMinute ?? item.startMinute);
     editorError = "";
@@ -236,7 +284,6 @@
       editorAnchor = { x: event.clientX, y: event.clientY };
     }
     dialogOpen = true;
-    sidebarPanel = "editor";
   }
 
   function draftForSave() {
@@ -259,30 +306,84 @@
       editorError = "End time must be after start time.";
       return null;
     }
+    if (draftWeekdays.length === 0) {
+      editorError = "Pick at least one day.";
+      return null;
+    }
     editorError = "";
+    const sortedWeekdays = [...draftWeekdays].sort(
+      (a, b) => a - b,
+    ) as Weekday[];
+    const anchorWeekday: Weekday = sortedWeekdays.includes(draft.weekday)
+      ? draft.weekday
+      : sortedWeekdays[0];
     return {
       ...draft,
       kind: dialogKind,
       startMinute,
       endMinute: dialogKind === "pin" ? null : endMinute,
+      weekday: anchorWeekday,
+      weekdays: sortedWeekdays,
     };
   }
 
   async function saveItem() {
     const payload = draftForSave();
     if (!payload) return;
-    const url =
-      editorMode === "edit" && editingId
-        ? apiPath(`/api/items/${editingId}`)
-        : apiPath("/api/items");
-    const item = await fetch(url, {
-      method: editorMode === "edit" && editingId ? "PUT" : "POST",
+    let url: string;
+    let method: "POST" | "PUT";
+    let body: unknown = payload;
+    if (editorMode === "edit" && editingId) {
+      url = apiPath(`/api/items/${editingId}`);
+      method = "PUT";
+      const promoting = !payload.seriesId && payload.weekdays.length > 1;
+      const stayingInSeries = !!payload.seriesId;
+      if (promoting || stayingInSeries) {
+        body = {
+          ...payload,
+          scope: "series",
+          seriesId: payload.seriesId ?? crypto.randomUUID(),
+        };
+      } else {
+        body = { ...payload, scope: "instance" };
+      }
+    } else {
+      url = apiPath("/api/items");
+      method = "POST";
+    }
+    const result = await fetch(url, {
+      method,
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     }).then((response) => response.json());
     dialogOpen = false;
-    sidebarPanel = "overview";
-    selectedId = item.id ?? selectedId;
+    const firstId = Array.isArray(result) ? result[0]?.id : result?.id;
+    selectedId = firstId ?? selectedId;
+    if (Array.isArray(result) && result.length > 1) {
+      showToast(`Updated ${result.length} instances`);
+    } else if (Array.isArray(result) && result.length === 1) {
+      showToast("Created");
+    }
+    await invalidateAll();
+  }
+
+  async function detachFromSeries() {
+    if (!editingId || !draft.seriesId) return;
+    const payload = draftForSave();
+    if (!payload) return;
+    const result = await fetch(apiPath(`/api/items/${editingId}`), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...payload,
+        scope: "instance",
+        weekdays: [payload.weekday],
+      }),
+    }).then((response) => response.json());
+    draft = { ...draft, seriesId: null };
+    draftWeekdays = [draft.weekday];
+    selectedId = result?.id ?? selectedId;
+    showToast("Detached from series");
     await invalidateAll();
   }
 
@@ -290,16 +391,50 @@
     if (!editingId) return;
     await fetch(apiPath(`/api/items/${editingId}`), { method: "DELETE" });
     dialogOpen = false;
-    sidebarPanel = "overview";
     selectedId = null;
+    showToast("Deleted");
     await invalidateAll();
   }
 
-  async function persistItem(item: ScheduleItem) {
+  async function deleteEditingSeries() {
+    if (!editingId || !draft.seriesId) return;
+    const params = new URLSearchParams({
+      scope: "series",
+      seriesId: draft.seriesId,
+    });
+    await fetch(apiPath(`/api/items/${editingId}?${params.toString()}`), {
+      method: "DELETE",
+    });
+    dialogOpen = false;
+    selectedId = null;
+    showToast("Series deleted");
+    await invalidateAll();
+  }
+
+  async function persistItem(
+    item: ScheduleItem,
+    opts: { weekdayChanged?: boolean } = {},
+  ) {
+    let body: unknown = item;
+    if (item.seriesId) {
+      if (opts.weekdayChanged) {
+        // Cross-day drag detaches just this instance — moving to a new day
+        // shouldn't drag every sibling along with it.
+        body = { ...item, scope: "instance", weekdays: [item.weekday] };
+      } else {
+        // Same-day resize / move propagates to every sibling so the series
+        // stays in sync (matches the editor's default behavior).
+        body = {
+          ...item,
+          scope: "series",
+          weekdays: siblingWeekdaysFor(item),
+        };
+      }
+    }
     await fetch(apiPath(`/api/items/${item.id}`), {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(item),
+      body: JSON.stringify(body),
     });
     await invalidateAll();
   }
@@ -376,6 +511,8 @@
       color?: string;
       budgetMode?: "target" | "minimum" | "observation";
       targetMinutes?: number | null;
+      archived?: boolean;
+      sortOrder?: number;
     },
   ) {
     await fetch(apiPath(`/api/categories/${id}`), {
@@ -383,6 +520,173 @@
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
     });
+    await invalidateAll();
+  }
+
+  async function createCategoryRequest(payload: {
+    name: string;
+    color: string;
+  }) {
+    await fetch(apiPath("/api/categories"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await invalidateAll();
+  }
+
+  async function deleteCategoryRequest(id: string) {
+    const response = await fetch(apiPath(`/api/categories/${id}`), {
+      method: "DELETE",
+    });
+    if (response.status === 409) {
+      categoryDeleteError = "That category is still used by schedule items.";
+    } else {
+      categoryDeleteError = "";
+    }
+    await invalidateAll();
+  }
+
+  async function reorderCategoryRequest(id: string, direction: "up" | "down") {
+    await fetch(apiPath("/api/categories/reorder"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, direction }),
+    });
+    await invalidateAll();
+  }
+
+  const TODO_DRAG_MIME = "application/x-schedule-studio-todo";
+
+  async function createTodoRequest(payload: {
+    title: string;
+    kind: ItemKind;
+    categoryId: string | null;
+    durationMinutes: number | null;
+  }) {
+    await fetch(apiPath("/api/todos"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await invalidateAll();
+  }
+
+  async function updateTodoRequest(
+    id: string,
+    patch: Partial<{
+      title: string;
+      kind: ItemKind;
+      categoryId: string | null;
+      durationMinutes: number | null;
+    }>,
+  ) {
+    await fetch(apiPath(`/api/todos/${id}`), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    await invalidateAll();
+  }
+
+  async function deleteTodoRequest(id: string) {
+    await fetch(apiPath(`/api/todos/${id}`), { method: "DELETE" });
+    await invalidateAll();
+  }
+
+  function handleTodoDragStart(todo: Todo, event: DragEvent) {
+    if (!event.dataTransfer) return;
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData(
+      TODO_DRAG_MIME,
+      JSON.stringify({
+        title: todo.title,
+        kind: todo.kind,
+        categoryId: todo.categoryId,
+        durationMinutes: todo.durationMinutes,
+      }),
+    );
+    // Plain-text fallback so browsers that ignore custom MIME types still
+    // know something is being dragged (mostly cosmetic for the drag image).
+    event.dataTransfer.setData("text/plain", todo.title);
+  }
+
+  function readTodoDragPayload(event: DragEvent) {
+    const raw =
+      event.dataTransfer?.getData(TODO_DRAG_MIME) ??
+      event.dataTransfer?.getData("text/plain") ??
+      "";
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (
+        typeof parsed?.title === "string" &&
+        (parsed.kind === "block" || parsed.kind === "pin")
+      ) {
+        return parsed as {
+          title: string;
+          kind: ItemKind;
+          categoryId: string | null;
+          durationMinutes: number | null;
+        };
+      }
+    } catch {
+      // Plain-text fallback: title only, default block + 60min.
+      return {
+        title: raw,
+        kind: "block" as const,
+        categoryId: null,
+        durationMinutes: null,
+      };
+    }
+    return null;
+  }
+
+  function handleDayDragOver(event: DragEvent) {
+    if (!event.dataTransfer?.types.includes(TODO_DRAG_MIME)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  async function handleDayDrop(
+    event: DragEvent,
+    weekday: Weekday,
+    axis: "vertical" | "horizontal",
+  ) {
+    const payload = readTodoDragPayload(event);
+    if (!payload) return;
+    event.preventDefault();
+    const target = event.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const offset =
+      axis === "horizontal"
+        ? Math.max(0, Math.min(rect.width, event.clientX - rect.left))
+        : Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+    const startMinute = Math.max(
+      maxStart,
+      Math.min(maxEnd - SNAP_MINUTES, minuteFromOffset(offset)),
+    );
+    const duration =
+      payload.kind === "block"
+        ? (payload.durationMinutes ?? DEFAULT_BLOCK_DURATION)
+        : null;
+    const fallbackCategoryId = week.categories[0]?.id ?? "deep-work";
+    const item: ItemInput = {
+      kind: payload.kind,
+      title: payload.title,
+      weekday,
+      startMinute,
+      endMinute: payload.kind === "pin" ? null : startMinute + (duration ?? 60),
+      categoryId: payload.categoryId ?? fallbackCategoryId,
+      notes: "",
+      seriesId: null,
+    };
+    await fetch(apiPath("/api/items"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(item),
+    });
+    showToast(`Added "${payload.title}"`);
     await invalidateAll();
   }
 
@@ -419,8 +723,49 @@
   }
 
   function openSettings() {
-    sidebarPanel = sidebarPanel === "settings" ? "overview" : "settings";
+    settingsOpen = !settingsOpen;
     dialogOpen = false;
+  }
+
+  function openDayBoundsEditor(
+    weekday: Weekday,
+    event: MouseEvent | PointerEvent,
+  ) {
+    const day = week.days.find((d) => d.weekday === weekday);
+    if (!day) return;
+    visibleDay = weekday;
+    dayBoundsEditor = {
+      weekday,
+      anchor: { x: event.clientX, y: event.clientY },
+      wakeText: formatTime(day.bounds.wakeMinute),
+      sleepText: formatTime(day.bounds.sleepMinute),
+      error: "",
+    };
+  }
+
+  async function saveDayBounds() {
+    if (!dayBoundsEditor) return;
+    const wake = parseTimeInput(dayBoundsEditor.wakeText);
+    const sleep = parseTimeInput(dayBoundsEditor.sleepText);
+    if (wake === null) {
+      dayBoundsEditor.error = "Use a wake time like 5:30 AM.";
+      return;
+    }
+    if (sleep === null) {
+      dayBoundsEditor.error = "Use a sleep time like 10:00 PM.";
+      return;
+    }
+    if (sleep <= wake) {
+      dayBoundsEditor.error = "Sleep must be after wake.";
+      return;
+    }
+    await fetch(apiPath(`/api/day-bounds/${dayBoundsEditor.weekday}`), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wakeMinute: wake, sleepMinute: sleep }),
+    });
+    dayBoundsEditor = null;
+    await invalidateAll();
   }
 
   function zoomPercent() {
@@ -458,32 +803,130 @@
     return `top:${((startMinute - maxStart) / totalGridMinutes) * 100}%;height:${((endMinute - startMinute) / totalGridMinutes) * 100}%`;
   }
 
-  function handleEmptyClick(
-    event: PointerEvent | MouseEvent,
+  function minuteFromOffset(offset: number): number {
+    const rawMinute = maxStart + (offset / hourHeight) * 60;
+    return Math.max(maxStart, Math.min(maxEnd, snapMinute(rawMinute)));
+  }
+
+  function beginDraw(
+    event: PointerEvent,
     weekday: Weekday,
     axis: "vertical" | "horizontal" = "vertical",
   ) {
     if (
       dialogOpen ||
       dragging ||
+      drawing ||
       (event.target instanceof Element &&
         event.target.closest("[data-schedule-item]"))
     ) {
       return;
     }
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const rect = target.getBoundingClientRect();
     const offset =
       axis === "horizontal"
         ? Math.max(0, Math.min(rect.width, event.clientX - rect.left))
         : Math.max(0, Math.min(rect.height, event.clientY - rect.top));
-    const rawMinute = maxStart + (offset / hourHeight) * 60;
-    const maxStartMinute = Math.max(maxStart, maxEnd - HOVER_BLOCK_DURATION);
-    const minute = Math.max(
+    const startMinute = Math.max(
       maxStart,
-      Math.min(maxStartMinute, snapMinute(rawMinute)),
+      Math.min(maxEnd - SNAP_MINUTES, minuteFromOffset(offset)),
     );
+    drawing = {
+      weekday,
+      axis,
+      originX: event.clientX,
+      originY: event.clientY,
+      rectLeft: rect.left,
+      rectTop: rect.top,
+      rectWidth: rect.width,
+      rectHeight: rect.height,
+      startMinute,
+      endMinute: Math.min(maxEnd, startMinute + DEFAULT_BLOCK_DURATION),
+      moved: false,
+    };
+  }
+
+  function moveDraw(event: PointerEvent) {
+    if (!drawing) return;
+    const dx = event.clientX - drawing.originX;
+    const dy = event.clientY - drawing.originY;
+    const primary = drawing.axis === "horizontal" ? dx : dy;
+    if (Math.abs(primary) > 3) drawing.moved = true;
+    const offset =
+      drawing.axis === "horizontal"
+        ? Math.max(
+            0,
+            Math.min(drawing.rectWidth, event.clientX - drawing.rectLeft),
+          )
+        : Math.max(
+            0,
+            Math.min(drawing.rectHeight, event.clientY - drawing.rectTop),
+          );
+    const candidate = minuteFromOffset(offset);
+    // Anchor is wherever the pointerdown landed; the user's drag direction
+    // sets which side of the anchor becomes start vs end.
+    const anchor = minuteFromOffset(
+      drawing.axis === "horizontal"
+        ? Math.max(
+            0,
+            Math.min(drawing.rectWidth, drawing.originX - drawing.rectLeft),
+          )
+        : Math.max(
+            0,
+            Math.min(drawing.rectHeight, drawing.originY - drawing.rectTop),
+          ),
+    );
+    if (candidate >= anchor) {
+      drawing.startMinute = anchor;
+      drawing.endMinute = Math.max(anchor + SNAP_MINUTES, candidate);
+    } else {
+      drawing.startMinute = Math.min(candidate, anchor - SNAP_MINUTES);
+      drawing.endMinute = anchor;
+    }
+  }
+
+  function endDraw(event: PointerEvent) {
+    if (!drawing) return;
+    const target = event.currentTarget as HTMLElement;
+    try {
+      target.releasePointerCapture(event.pointerId);
+    } catch {
+      /* capture already released */
+    }
+    const { weekday, startMinute, endMinute, moved } = drawing;
+    drawing = null;
     editorAnchor = { x: event.clientX, y: event.clientY };
-    openCreate("block", weekday, minute, HOVER_BLOCK_DURATION);
+    const duration = moved
+      ? Math.max(SNAP_MINUTES, endMinute - startMinute)
+      : DEFAULT_BLOCK_DURATION;
+    openCreate("block", weekday, startMinute, duration);
+  }
+
+  function cancelDraw() {
+    drawing = null;
+  }
+
+  function drawingGhostStyleVertical(d: {
+    startMinute: number;
+    endMinute: number;
+  }): string {
+    const top = ((d.startMinute - maxStart) / totalGridMinutes) * 100;
+    const height = ((d.endMinute - d.startMinute) / totalGridMinutes) * 100;
+    return `top:${top}%;height:${height}%;left:12px;right:12px;`;
+  }
+
+  function drawingGhostStyleHorizontal(d: {
+    startMinute: number;
+    endMinute: number;
+  }): string {
+    const left = ((d.startMinute - maxStart) / 60) * hourHeight;
+    const width = Math.max(
+      2,
+      ((d.endMinute - d.startMinute) / 60) * hourHeight,
+    );
+    return `left:${left}px;width:${width}px;top:32px;bottom:8px;`;
   }
 
   function beginDrag(
@@ -503,6 +946,7 @@
       originEnd: item.endMinute,
       originWeekday: item.weekday,
     };
+    dragMoved = false;
     selectedId = item.id;
   }
 
@@ -514,9 +958,12 @@
     if (!item) return;
     const pointer =
       dragging.axis === "horizontal" ? event.clientX : event.clientY;
-    const deltaMinutes = snapMinute(
-      ((pointer - dragging.originY) / hourHeight) * 60,
-    );
+    if (Math.abs(pointer - dragging.originY) > 3) dragMoved = true;
+    // Delta is the raw minute-difference from the drag origin. We don't snap
+    // it here — `snapMinute` clamps to [0, 1440] which would zero out any
+    // negative delta and prevent shrinking. Downstream calls snap the
+    // resulting absolute time, which already rounds to the 5-minute grid.
+    const deltaMinutes = ((pointer - dragging.originY) / hourHeight) * 60;
     let startMinute = dragging.originStart;
     let endMinute = dragging.originEnd;
 
@@ -526,6 +973,19 @@
         dragging.originEnd === null
           ? null
           : snapMinute(dragging.originEnd + deltaMinutes);
+      const targetWeekday = detectWeekdayUnderPointer(
+        event.clientX,
+        event.clientY,
+        dragging.axis,
+      );
+      if (targetWeekday && targetWeekday !== item.weekday) {
+        updateLocalItem(item.id, {
+          startMinute,
+          endMinute,
+          weekday: targetWeekday,
+        });
+        return;
+      }
     } else if (dragging.mode === "resize-start") {
       startMinute = Math.min(
         snapMinute(dragging.originStart + deltaMinutes),
@@ -546,14 +1006,73 @@
 
   async function endDrag() {
     if (!dragging) return;
+    const originWeekday = dragging.originWeekday;
     const item = allItems().find(
       (candidate: ScheduleItem) => candidate.id === dragging?.id,
     );
     dragging = null;
-    if (item) await persistItem(item);
+    if (!item) return;
+    await persistItem(item, {
+      weekdayChanged: item.weekday !== originWeekday,
+    });
+  }
+
+  function detectWeekdayUnderPointer(
+    clientX: number,
+    clientY: number,
+    axis: "vertical" | "horizontal",
+  ): Weekday | null {
+    const selector =
+      axis === "horizontal"
+        ? '[data-testid^="horizontal-day-"]'
+        : '[data-testid^="day-column-"]';
+    const cells = document.querySelectorAll<HTMLElement>(selector);
+    for (const cell of cells) {
+      const r = cell.getBoundingClientRect();
+      if (axis === "horizontal") {
+        if (clientY >= r.top && clientY < r.bottom) {
+          return weekdayFromTestId(cell.getAttribute("data-testid"));
+        }
+      } else {
+        if (clientX >= r.left && clientX < r.right) {
+          return weekdayFromTestId(cell.getAttribute("data-testid"));
+        }
+      }
+    }
+    return null;
+  }
+
+  function weekdayFromTestId(testid: string | null): Weekday | null {
+    const match = testid?.match(/-(\d+)$/);
+    if (!match) return null;
+    const n = parseInt(match[1], 10);
+    return n >= 1 && n <= 7 ? (n as Weekday) : null;
   }
 
   function updateLocalItem(id: string, patch: Partial<ScheduleItem>) {
+    if (patch.weekday !== undefined) {
+      // Re-bucket the item into its (possibly new) day.
+      let updated: ScheduleItem | null = null;
+      const stripped = week.days.map((day) => ({
+        ...day,
+        items: day.items.filter((item: ScheduleItem) => {
+          if (item.id !== id) return true;
+          updated = { ...item, ...patch };
+          return false;
+        }),
+      }));
+      if (!updated) return;
+      const moved = updated as ScheduleItem;
+      week = {
+        ...week,
+        days: stripped.map((day) =>
+          day.weekday === moved.weekday
+            ? { ...day, items: [...day.items, moved] }
+            : day,
+        ),
+      };
+      return;
+    }
     week = {
       ...week,
       days: week.days.map((day) => ({
@@ -594,19 +1113,6 @@
     return `left:${((minute - maxStart) / 60) * hourHeight}px;`;
   }
 
-  function horizontalHoverToolbarStyle(minute: number) {
-    const left = ((minute - maxStart) / 60) * hourHeight;
-    const clamped = Math.max(
-      8,
-      Math.min(left - HOVER_TOOLBAR_WIDTH / 2, horizontalTimelineWidth - HOVER_TOOLBAR_WIDTH - 8),
-    );
-    return `left:${clamped}px;width:${HOVER_TOOLBAR_WIDTH}px;`;
-  }
-
-  function selectedDayLabel(weekday: Weekday) {
-    return week.days.find((day) => day.weekday === weekday)?.dateLabel ?? "";
-  }
-
   function dateRangeLabel() {
     const start = new Date(`${week.weekStart}T00:00:00`);
     const end = new Date(`${week.weekEnd}T00:00:00`);
@@ -630,10 +1136,17 @@
     onMenu={openSettings}
     onVersionMenu={() => (versionMenuOpen = !versionMenuOpen)}
   />
-  <BudgetStrip
-    categories={week.categories}
-    budgets={week.categoryBudgets}
-  />
+  <BudgetStrip categories={week.categories} budgets={week.categoryBudgets} />
+  {#if appToast}
+    <div
+      class="border-border bg-surface text-foreground/90 pointer-events-none fixed top-16 left-1/2 z-50 -translate-x-1/2 rounded-md border px-3 py-1.5 text-[12px] shadow-lg shadow-black/40"
+      data-testid="app-toast"
+      role="status"
+      aria-live="polite"
+    >
+      {appToast}
+    </div>
+  {/if}
 
   <main class="flex min-h-0 flex-1">
     <section class="flex min-w-0 flex-1 flex-col">
@@ -651,7 +1164,8 @@
               visibleDay
                 ? 'text-[#bb9af7]'
                 : ''}"
-              on:click={() => (visibleDay = day.weekday)}
+              data-testid={`day-header-${day.weekday}`}
+              on:click={(event) => openDayBoundsEditor(day.weekday, event)}
             >
               <div class="text-[14px] font-semibold">{day.dateLabel}</div>
               <div class="text-muted-foreground mt-0.5 flex gap-4 text-[10px]">
@@ -698,7 +1212,14 @@
               <div
                 class="border-border/80 relative cursor-cell border-r bg-[var(--timeline)]"
                 data-testid={`day-column-${day.weekday}`}
-                on:click={(event) => handleEmptyClick(event, day.weekday)}
+                on:pointerdown={(event) =>
+                  beginDraw(event, day.weekday, "vertical")}
+                on:pointermove={moveDraw}
+                on:pointerup={endDraw}
+                on:pointercancel={cancelDraw}
+                on:dragover={handleDayDragOver}
+                on:drop={(event) =>
+                  handleDayDrop(event, day.weekday, "vertical")}
               >
                 {#each hourTicks() as tick}
                   <div
@@ -706,6 +1227,13 @@
                     style={tickStyle(tick)}
                   ></div>
                 {/each}
+                {#if drawing && drawing.weekday === day.weekday && drawing.axis === "vertical"}
+                  <div
+                    class="pointer-events-none absolute z-20 rounded-md border-2 border-dashed border-[#7aa2f7] bg-[#7aa2f7]/10"
+                    style={drawingGhostStyleVertical(drawing)}
+                    aria-hidden="true"
+                  ></div>
+                {/if}
 
                 {#each day.items as item}
                   {@const category = categoryById(item.categoryId)}
@@ -714,6 +1242,7 @@
                   <button
                     data-schedule-item
                     data-testid="schedule-item"
+                    data-series-id={item.seriesId ?? ""}
                     class="focus:ring-ring absolute right-3 left-3 z-10 overflow-hidden rounded-md border text-left shadow-lg shadow-black/20 transition-transform hover:translate-y-[-1px] focus:ring-2 focus:outline-none {selectedId ===
                     item.id
                       ? 'ring-2 ring-[#7aa2f7]/80'
@@ -736,43 +1265,56 @@
                     on:pointerup={endDrag}
                     on:pointercancel={endDrag}
                   >
+                    {#if item.seriesId}
+                      <span
+                        data-testid="series-marker"
+                        class="pointer-events-none absolute top-1 right-1 z-30 h-1.5 w-1.5 rounded-full"
+                        style="background:{category.color};"
+                        aria-label="Part of a series"
+                      ></span>
+                    {/if}
                     {#if item.kind === "block"}
+                      <!-- Always-active resize hit zones at the top and bottom edges. -->
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <span
                         data-testid="resize-start-handle"
-                        class="absolute top-0 left-1/2 z-30 h-2 w-10 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize rounded-full border border-white/60 bg-white/80 {selectedId ===
-                        item.id
-                          ? ''
-                          : 'hidden'}"
+                        class="absolute top-0 right-0 left-0 z-30 h-1.5 cursor-ns-resize"
                         on:pointerdown={(event) =>
                           beginDrag(event, item, "resize-start")}
                       ></span>
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <span
                         data-testid="resize-end-handle"
-                        class="absolute bottom-0 left-1/2 z-30 h-2 w-10 -translate-x-1/2 translate-y-1/2 cursor-ns-resize rounded-full border border-white/60 bg-white/80 {selectedId ===
-                        item.id
-                          ? ''
-                          : 'hidden'}"
+                        class="absolute right-0 bottom-0 left-0 z-30 h-1.5 cursor-ns-resize"
                         on:pointerdown={(event) =>
                           beginDrag(event, item, "resize-end")}
                       ></span>
+                      <!-- Move zone covers the middle. -->
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <span
-                        class="absolute inset-0 z-10 cursor-grab"
+                        class="absolute top-1.5 right-0 bottom-1.5 left-0 z-10 cursor-grab"
                         on:pointerdown={(event) =>
                           beginDrag(event, item, "move")}
                       ></span>
+                      {#if selectedId === item.id}
+                        <!-- Visual accent on selection. -->
+                        <span
+                          class="pointer-events-none absolute top-0 left-1/2 z-20 h-2 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-white/80"
+                        ></span>
+                        <span
+                          class="pointer-events-none absolute bottom-0 left-1/2 z-20 h-2 w-10 -translate-x-1/2 translate-y-1/2 rounded-full border border-white/60 bg-white/80"
+                        ></span>
+                      {/if}
                       {#if density === "micro"}
                         <span
-                          class="relative block truncate text-[11px] leading-[16px] font-semibold"
+                          class="pointer-events-none relative block truncate text-[11px] leading-[16px] font-semibold"
                           title={`${item.title}: ${formatTime(item.startMinute)} - ${formatTime(item.endMinute ?? item.startMinute)}`}
                         >
                           {item.title}
                         </span>
                       {:else if density === "compact"}
                         <span
-                          class="relative block truncate text-[11px] leading-[18px] font-semibold"
+                          class="pointer-events-none relative block truncate text-[11px] leading-[18px] font-semibold"
                           title={`${item.title}: ${formatTime(item.startMinute)} - ${formatTime(item.endMinute ?? item.startMinute)}`}
                         >
                           {item.title}
@@ -788,11 +1330,11 @@
                         </span>
                       {:else}
                         <span
-                          class="relative block truncate text-[12px] leading-[17px] font-semibold"
+                          class="pointer-events-none relative block truncate text-[12px] leading-[17px] font-semibold"
                           >{item.title}</span
                         >
                         <span
-                          class="text-foreground/70 relative mt-0.5 block truncate text-[11px] leading-[14px]"
+                          class="text-foreground/70 pointer-events-none relative mt-0.5 block truncate text-[11px] leading-[14px]"
                         >
                           {formatTime(item.startMinute)
                             .replace(" AM", "")
@@ -805,7 +1347,7 @@
                       {/if}
                       {#if itemWarnings.length}
                         <span
-                          class="relative mt-1 inline-flex rounded bg-red-500/80 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                          class="pointer-events-none relative mt-1 inline-flex rounded bg-red-500/80 px-1.5 py-0.5 text-[10px] font-semibold text-white"
                           >Overlap</span
                         >
                       {/if}
@@ -817,11 +1359,6 @@
                       <span class="text-foreground/75 truncate text-[11px]"
                         >{item.title}</span
                       >
-                      <span
-                        class="border-muted-foreground/60 ml-auto flex h-3.5 w-3.5 items-center justify-center rounded border text-[9px]"
-                      >
-                        {#if item.completed}<Check size={10} />{/if}
-                      </span>
                     {/if}
                   </button>
                 {/each}
@@ -866,7 +1403,8 @@
                 <button
                   class="bg-surface-2/70 border-border absolute top-0 bottom-0 left-0 z-20 border-r px-3 text-left"
                   style="width:{HORIZONTAL_LABEL_WIDTH}px;"
-                  on:click={() => (visibleDay = day.weekday)}
+                  data-testid={`day-header-${day.weekday}`}
+                  on:click={(event) => openDayBoundsEditor(day.weekday, event)}
                 >
                   <div class="text-[13px] font-semibold">{day.dateLabel}</div>
                   <div class="text-muted-foreground mt-1 text-[10px]">
@@ -879,8 +1417,14 @@
                   class="absolute top-0 bottom-0 cursor-cell bg-[var(--timeline)]"
                   style="left:{HORIZONTAL_LABEL_WIDTH}px;width:{horizontalTimelineWidth}px;"
                   data-testid={`horizontal-day-${day.weekday}`}
-                  on:click={(event) =>
-                    handleEmptyClick(event, day.weekday, "horizontal")}
+                  on:pointerdown={(event) =>
+                    beginDraw(event, day.weekday, "horizontal")}
+                  on:pointermove={moveDraw}
+                  on:pointerup={endDraw}
+                  on:pointercancel={cancelDraw}
+                  on:dragover={handleDayDragOver}
+                  on:drop={(event) =>
+                    handleDayDrop(event, day.weekday, "horizontal")}
                 >
                   {#each hourTicks() as tick}
                     <div
@@ -888,6 +1432,13 @@
                       style={horizontalHoverStyle(tick)}
                     ></div>
                   {/each}
+                  {#if drawing && drawing.weekday === day.weekday && drawing.axis === "horizontal"}
+                    <div
+                      class="pointer-events-none absolute z-20 rounded-md border-2 border-dashed border-[#7aa2f7] bg-[#7aa2f7]/10"
+                      style={drawingGhostStyleHorizontal(drawing)}
+                      aria-hidden="true"
+                    ></div>
+                  {/if}
 
                   {#each day.items as item}
                     {@const category = categoryById(item.categoryId)}
@@ -895,6 +1446,7 @@
                     <button
                       data-schedule-item
                       data-testid="schedule-item"
+                      data-series-id={item.seriesId ?? ""}
                       class="focus:ring-ring absolute z-10 overflow-hidden rounded-[5px] text-left transition-shadow focus:outline-none {isSelected
                         ? 'ring-1 ring-[#7aa2f7]/70 shadow-md shadow-black/30'
                         : 'hover:bg-white/[0.02]'} {item.kind === 'pin'
@@ -908,41 +1460,58 @@
                       on:pointerup={endDrag}
                       on:pointercancel={endDrag}
                     >
+                      {#if item.seriesId}
+                        <span
+                          data-testid="series-marker"
+                          class="pointer-events-none absolute top-0.5 right-0.5 z-30 h-1.5 w-1.5 rounded-full"
+                          style="background:{category.color};"
+                          aria-label="Part of a series"
+                        ></span>
+                      {/if}
                       {#if item.kind === "block"}
-                        {#if isSelected}
-                          <!-- svelte-ignore a11y_no_static_element_interactions -->
-                          <span
-                            data-testid="resize-start-handle"
-                            class="absolute top-1/2 left-0 z-30 h-7 w-1.5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm bg-[#7aa2f7]"
-                            on:pointerdown={(event) =>
-                              beginDrag(
-                                event,
-                                item,
-                                "resize-start",
-                                "horizontal",
-                              )}
-                          ></span>
-                          <!-- svelte-ignore a11y_no_static_element_interactions -->
-                          <span
-                            data-testid="resize-end-handle"
-                            class="absolute top-1/2 right-0 z-30 h-7 w-1.5 translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm bg-[#7aa2f7]"
-                            on:pointerdown={(event) =>
-                              beginDrag(event, item, "resize-end", "horizontal")}
-                          ></span>
-                        {/if}
+                        <!-- Always-active resize hit zones at the left and right edges. -->
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <span
-                          class="absolute inset-0 z-10 cursor-grab"
+                          data-testid="resize-start-handle"
+                          class="absolute top-0 bottom-0 left-0 z-30 w-2 cursor-ew-resize"
+                          on:pointerdown={(event) =>
+                            beginDrag(
+                              event,
+                              item,
+                              "resize-start",
+                              "horizontal",
+                            )}
+                        ></span>
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span
+                          data-testid="resize-end-handle"
+                          class="absolute top-0 right-0 bottom-0 z-30 w-2 cursor-ew-resize"
+                          on:pointerdown={(event) =>
+                            beginDrag(event, item, "resize-end", "horizontal")}
+                        ></span>
+                        <!-- Move zone covers the middle. -->
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span
+                          class="absolute top-0 right-2 bottom-0 left-2 z-10 cursor-grab"
                           on:pointerdown={(event) =>
                             beginDrag(event, item, "move", "horizontal")}
                         ></span>
+                        {#if isSelected}
+                          <!-- Visual accent on selection. -->
+                          <span
+                            class="pointer-events-none absolute top-1/2 left-0 z-20 h-7 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-[#7aa2f7]"
+                          ></span>
+                          <span
+                            class="pointer-events-none absolute top-1/2 right-0 z-20 h-7 w-1.5 translate-x-1/2 -translate-y-1/2 rounded-sm bg-[#7aa2f7]"
+                          ></span>
+                        {/if}
                         <span
-                          class="text-foreground/95 relative z-20 block truncate text-[12px] font-medium tracking-tight"
+                          class="text-foreground/95 pointer-events-none relative z-20 block truncate text-[12px] font-medium tracking-tight"
                         >
                           {item.title}
                         </span>
                         <span
-                          class="text-muted-foreground relative z-20 mt-0.5 block truncate font-mono text-[10px] tabular-nums"
+                          class="text-muted-foreground pointer-events-none relative z-20 mt-0.5 block truncate font-mono text-[10px] tabular-nums"
                         >
                           {formatTime(item.startMinute)
                             .replace(":00 ", "")
@@ -956,11 +1525,11 @@
                         </span>
                       {:else}
                         <span
-                          class="h-2 w-2 shrink-0 rounded-full"
+                          class="pointer-events-none h-2 w-2 shrink-0 rounded-full"
                           style="background:{category.color}"
                         ></span>
                         <span
-                          class="text-foreground/95 truncate text-[11px] font-medium"
+                          class="text-foreground/95 pointer-events-none truncate text-[11px] font-medium"
                           >{item.title}</span
                         >
                       {/if}
@@ -974,6 +1543,14 @@
       </div>
     </section>
 
+    <TodoSidebar
+      todos={week.todos}
+      categories={week.categories}
+      onCreate={createTodoRequest}
+      onUpdate={updateTodoRequest}
+      onDelete={deleteTodoRequest}
+      onDragStart={handleTodoDragStart}
+    />
   </main>
 
   {#if dialogOpen}
@@ -981,23 +1558,23 @@
       ? Math.max(12, Math.min(editorAnchor.x - 168, window.innerWidth - 348))
       : Math.max(12, window.innerWidth / 2 - 168)}
     {@const popY = editorAnchor
-      ? Math.max(72, Math.min(editorAnchor.y + 8, window.innerHeight - 460))
-      : 96}
+      ? Math.max(16, Math.min(editorAnchor.y + 8, window.innerHeight - 240))
+      : 16}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       class="fixed inset-0 z-40"
       on:click={() => {
         dialogOpen = false;
-        sidebarPanel = "overview";
       }}
     >
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <section
         aria-label="Add schedule item"
-        class="border-border bg-surface absolute w-[336px] rounded-lg border p-4 shadow-2xl shadow-black/50"
-        style="left:{popX}px;top:{popY}px;"
+        class="border-border bg-surface absolute flex w-[336px] flex-col overflow-y-auto rounded-lg border p-4 shadow-2xl shadow-black/50"
+        style="left:{popX}px;top:{popY}px;max-height:calc(100vh - {popY +
+          16}px);"
         on:click|stopPropagation
       >
         <div class="mb-4 flex items-center justify-between gap-3">
@@ -1039,7 +1616,6 @@
             aria-label="Close"
             on:click={() => {
               dialogOpen = false;
-              sidebarPanel = "overview";
             }}
           >
             <X size={15} />
@@ -1054,19 +1630,32 @@
               bind:value={draft.title}
             />
           </label>
+          <div class="block">
+            <span class="text-muted-foreground mb-1 block">Days</span>
+            <div
+              role="group"
+              aria-label="Days"
+              class="flex gap-1"
+              data-testid="day-chips"
+            >
+              {#each [1, 2, 3, 4, 5, 6, 7] as wd (wd)}
+                {@const active = draftWeekdays.includes(wd as Weekday)}
+                <button
+                  type="button"
+                  class="border-border h-7 flex-1 rounded-md border text-[11px] font-medium tabular-nums transition-colors {active
+                    ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/15 text-foreground'
+                    : 'bg-muted/20 text-muted-foreground hover:bg-muted/40'}"
+                  aria-pressed={active}
+                  aria-label={`Toggle ${["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][wd - 1]}`}
+                  data-testid={`day-chip-${wd}`}
+                  on:click={() => toggleDraftWeekday(wd as Weekday)}
+                >
+                  {DAY_LETTERS[wd - 1]}
+                </button>
+              {/each}
+            </div>
+          </div>
           <div class="grid grid-cols-2 gap-2">
-            <label class="block">
-              <span class="text-muted-foreground mb-1 block">Day</span>
-              <select
-                class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-                aria-label="Day"
-                bind:value={draft.weekday}
-              >
-                {#each week.days as day}
-                  <option value={day.weekday}>{day.dateLabel}</option>
-                {/each}
-              </select>
-            </label>
             <label class="block">
               <span class="text-muted-foreground mb-1 block">Start time</span>
               <input
@@ -1076,18 +1665,18 @@
                 bind:value={draftStartTime}
               />
             </label>
+            {#if dialogKind === "block"}
+              <label class="block">
+                <span class="text-muted-foreground mb-1 block">End time</span>
+                <input
+                  class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
+                  aria-label="End time"
+                  placeholder="5:15 AM"
+                  bind:value={draftEndTime}
+                />
+              </label>
+            {/if}
           </div>
-          {#if dialogKind === "block"}
-            <label class="block">
-              <span class="text-muted-foreground mb-1 block">End time</span>
-              <input
-                class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 outline-none"
-                aria-label="End time"
-                placeholder="5:15 AM"
-                bind:value={draftEndTime}
-              />
-            </label>
-          {/if}
           <label class="block">
             <span class="text-muted-foreground mb-1 block">Category</span>
             <select
@@ -1124,6 +1713,22 @@
             >
               Delete
             </button>
+            {#if draft.seriesId}
+              <button
+                class="rounded-md border border-red-400/30 px-3 py-2 text-[12px] text-red-300 hover:bg-red-500/10"
+                data-testid="delete-series"
+                on:click={deleteEditingSeries}
+              >
+                Delete series
+              </button>
+              <button
+                class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
+                data-testid="detach-series"
+                on:click={detachFromSeries}
+              >
+                Detach
+              </button>
+            {/if}
             <button
               class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
               on:click={duplicateSelected}
@@ -1135,7 +1740,6 @@
             class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-2 text-[12px]"
             on:click={() => {
               dialogOpen = false;
-              sidebarPanel = "overview";
             }}>Cancel</button
           >
           <button
@@ -1148,12 +1752,91 @@
     </div>
   {/if}
 
-  {#if sidebarPanel === "settings"}
+  {#if dayBoundsEditor}
+    {@const wakePopX = Math.max(
+      12,
+      Math.min(dayBoundsEditor.anchor.x - 140, window.innerWidth - 292),
+    )}
+    {@const wakePopY = Math.max(
+      16,
+      Math.min(dayBoundsEditor.anchor.y + 8, window.innerHeight - 240),
+    )}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div
+      role="presentation"
+      class="fixed inset-0 z-40"
+      on:click={() => (dayBoundsEditor = null)}
+    >
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <section
+        aria-label="Day wake and sleep"
+        data-testid="day-bounds-editor"
+        class="border-border bg-surface absolute flex w-[280px] flex-col rounded-lg border p-4 shadow-2xl shadow-black/50"
+        style="left:{wakePopX}px;top:{wakePopY}px;"
+        on:click|stopPropagation
+      >
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-[13px] font-semibold tracking-tight">
+            {week.days.find((d) => d.weekday === dayBoundsEditor!.weekday)
+              ?.dateLabel ?? ""}
+          </h2>
+          <button
+            type="button"
+            class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
+            aria-label="Close"
+            on:click={() => (dayBoundsEditor = null)}
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <label class="block">
+          <span class="text-muted-foreground mb-1 block text-[11px]">Wake</span>
+          <input
+            aria-label="Wake time"
+            class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
+            placeholder="5:30 AM"
+            bind:value={dayBoundsEditor.wakeText}
+          />
+        </label>
+        <label class="mt-3 block">
+          <span class="text-muted-foreground mb-1 block text-[11px]">Sleep</span
+          >
+          <input
+            aria-label="Sleep time"
+            class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
+            placeholder="10:00 PM"
+            bind:value={dayBoundsEditor.sleepText}
+          />
+        </label>
+        {#if dayBoundsEditor.error}
+          <div
+            class="mt-3 rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-200"
+          >
+            {dayBoundsEditor.error}
+          </div>
+        {/if}
+        <div class="mt-4 flex justify-end gap-2">
+          <button
+            class="border-border text-muted-foreground hover:bg-muted rounded-md border px-3 py-1.5 text-[12px]"
+            on:click={() => (dayBoundsEditor = null)}>Cancel</button
+          >
+          <button
+            class="rounded-md bg-[#7aa2f7] px-3 py-1.5 text-[12px] font-semibold text-[#101014] hover:bg-[#9eceff]"
+            on:click={saveDayBounds}>Save</button
+          >
+        </div>
+      </section>
+    </div>
+  {/if}
+
+  {#if settingsOpen}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       class="fixed inset-0 z-30 flex justify-end bg-black/40 backdrop-blur-sm"
-      on:click={() => (sidebarPanel = "overview")}
+      on:click={() => (settingsOpen = false)}
     >
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1161,12 +1844,14 @@
         class="border-border bg-surface flex h-full w-[360px] flex-col border-l shadow-2xl shadow-black/40"
         on:click|stopPropagation
       >
-        <div class="border-border flex items-center justify-between border-b p-4">
+        <div
+          class="border-border flex items-center justify-between border-b p-4"
+        >
           <h2 class="text-[14px] font-semibold tracking-tight">Settings</h2>
           <button
             class="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
             aria-label="Close"
-            on:click={() => (sidebarPanel = "overview")}
+            on:click={() => (settingsOpen = false)}
           >
             <X size={15} />
           </button>
@@ -1180,8 +1865,20 @@
             </div>
             <CategoryEditor
               categories={week.categories}
+              inUseIds={categoryInUseIds}
               onUpdate={updateCategorySettings}
+              onCreate={createCategoryRequest}
+              onDelete={deleteCategoryRequest}
+              onReorder={reorderCategoryRequest}
             />
+            {#if categoryDeleteError}
+              <div
+                class="mt-2 rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-200"
+                data-testid="category-delete-error"
+              >
+                {categoryDeleteError}
+              </div>
+            {/if}
           </section>
 
           <section>

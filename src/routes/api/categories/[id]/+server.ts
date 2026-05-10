@@ -1,5 +1,9 @@
 import { json } from "@sveltejs/kit";
-import { updateCategory } from "$lib/server/db";
+import {
+  CategoryInUseError,
+  deleteCategory,
+  updateCategory,
+} from "$lib/server/db";
 import type { BudgetMode } from "$lib/types";
 
 const VALID_MODES: BudgetMode[] = ["target", "minimum", "observation"];
@@ -21,6 +25,24 @@ export async function PUT({ params, request }) {
   ) {
     update.targetMinutes = payload.targetMinutes;
   }
+  if (typeof payload.archived === "boolean") {
+    update.archived = payload.archived;
+  }
+  if (typeof payload.sortOrder === "number") {
+    update.sortOrder = payload.sortOrder;
+  }
   updateCategory(update);
   return json({ ok: true });
+}
+
+export function DELETE({ params }) {
+  try {
+    deleteCategory(params.id);
+    return json({ ok: true });
+  } catch (error) {
+    if (error instanceof CategoryInUseError) {
+      return json({ error: "in_use" }, { status: 409 });
+    }
+    throw error;
+  }
 }

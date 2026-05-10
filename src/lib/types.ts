@@ -19,10 +19,6 @@ export type DayBounds = {
   weekday: Weekday;
   wakeMinute: number;
   sleepMinute: number;
-  /** @deprecated kept until phase 3 removes the legacy planner UI. */
-  bufferBefore: number;
-  /** @deprecated kept until phase 3 removes the legacy planner UI. */
-  bufferAfter: number;
 };
 
 export type ScheduleItem = {
@@ -35,9 +31,8 @@ export type ScheduleItem = {
   endMinute: number | null;
   categoryId: string;
   notes: string;
-  /** @deprecated kept until phase 3 removes the legacy planner UI. */
-  completed: boolean;
   source: "template" | "override";
+  seriesId: string | null;
 };
 
 export type OverlapWarning = {
@@ -74,6 +69,23 @@ export type ScheduleVersion = {
   updatedAt: string;
 };
 
+export type Todo = {
+  id: string;
+  title: string;
+  kind: ItemKind;
+  categoryId: string | null;
+  durationMinutes: number | null;
+  sortOrder: number;
+};
+
+export type TodoInput = {
+  id?: string;
+  title: string;
+  kind: ItemKind;
+  categoryId?: string | null;
+  durationMinutes?: number | null;
+};
+
 export type WeekView = {
   templateId: string;
   templateName: string;
@@ -94,6 +106,8 @@ export type WeekView = {
   dailyTotals: DailyTotal[];
   categoryBudgets: CategoryBudget[];
   overlapWarnings: OverlapWarning[];
+  todos: Todo[];
+  categoryUsage: Record<string, number>;
 };
 
 export type ItemInput = {
@@ -105,14 +119,26 @@ export type ItemInput = {
   endMinute?: number | null;
   categoryId: string;
   notes?: string;
-  /** @deprecated ignored by the server; kept for the legacy planner UI. */
-  completed?: boolean;
+  seriesId?: string | null;
+  /** Multi-day create: the weekdays this item should land on. If 2+, the server creates a series. */
+  weekdays?: Weekday[];
+  /** Edit/delete scope when the item belongs to a series. */
+  scope?: "instance" | "series";
 };
 
 export type CategoryUpdate = {
   id: string;
   name?: string;
   color?: string;
+  budgetMode?: BudgetMode;
+  targetMinutes?: number | null;
+  archived?: boolean;
+  sortOrder?: number;
+};
+
+export type CategoryCreateInput = {
+  name: string;
+  color: string;
   budgetMode?: BudgetMode;
   targetMinutes?: number | null;
 };

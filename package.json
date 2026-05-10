@@ -20,14 +20,12 @@
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tailwindcss/vite": "^4.2.2",
     "bits-ui": "^2.17.3",
-    "drizzle-orm": "^0.45.1",
     "lucide-svelte": "^1.0.1",
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
     "@types/node": "^25.0.0",
-    "drizzle-kit": "^0.31.8",
     "prettier": "^3.7.4",
     "prettier-plugin-svelte": "^3.4.1",
     "prettier-plugin-tailwindcss": "^0.7.2",

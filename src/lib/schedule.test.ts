@@ -34,8 +34,8 @@ const categories: Category[] = [
 const base = {
   templateId: "default",
   notes: "",
-  completed: false,
   source: "template" as const,
+  seriesId: null,
 };
 
 describe("schedule helpers", () => {

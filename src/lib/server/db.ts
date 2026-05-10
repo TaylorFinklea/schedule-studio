@@ -4,11 +4,15 @@ import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
   BudgetMode,
+  CategoryCreateInput,
   CategoryUpdate,
   DayBounds,
   ItemInput,
+  ItemKind,
   ScheduleItem,
   ScheduleVersion,
+  Todo,
+  TodoInput,
   VersionInput,
   Weekday,
   WeekView,
@@ -42,8 +46,6 @@ type BoundsRow = {
   weekday: Weekday;
   wake_minute: number;
   sleep_minute: number;
-  buffer_before: number;
-  buffer_after: number;
 };
 
 type TemplateRow = {
@@ -63,12 +65,38 @@ type ItemRow = {
   end_minute: number | null;
   category_id: string;
   notes: string;
-  completed: 0 | 1;
   source: "template" | "override";
+  series_id: string | null;
 };
 
+type TodoRow = {
+  id: string;
+  title: string;
+  kind: ItemKind;
+  category_id: string | null;
+  duration_minutes: number | null;
+  sort_order: number;
+};
+
+function rowToTodo(row: TodoRow): Todo {
+  return {
+    id: row.id,
+    title: row.title,
+    kind: row.kind,
+    categoryId: row.category_id,
+    durationMinutes: row.duration_minutes,
+    sortOrder: row.sort_order,
+  };
+}
+
 const DEFAULT_TEMPLATE_ID = "template-week";
-const MIGRATIONS = ["0001_initial", "0002_redesign"] as const;
+const MIGRATIONS = [
+  "0001_initial",
+  "0002_redesign",
+  "0003_default_hours_and_series",
+  "0004_drop_legacy",
+  "0005_todos",
+] as const;
 
 type SqliteDatabase = InstanceType<typeof DatabaseSync>;
 
@@ -90,7 +118,45 @@ export function getDb() {
   connection.exec("PRAGMA foreign_keys = ON");
   runMigrations(connection);
   seedIfEmpty(connection);
+  groupDuplicateItems(connection);
   return connection;
+}
+
+// Groups identical items across weekdays into a series. Idempotent: only
+// affects rows whose series_id is still NULL, so it can run after every
+// boot. Mirrors the auto-group SQL in migration 0003 — that migration
+// runs before the seed inserts data, so we re-run the same logic here.
+function groupDuplicateItems(db: SqliteDatabase) {
+  db.exec(`
+    WITH duplicate_groups AS (
+      SELECT template_id, kind, title, category_id, start_minute, end_minute,
+             lower(hex(randomblob(16))) AS new_series_id
+      FROM schedule_items
+      WHERE series_id IS NULL
+      GROUP BY template_id, kind, title, category_id, start_minute, end_minute
+      HAVING COUNT(DISTINCT weekday) >= 2
+    )
+    UPDATE schedule_items
+    SET series_id = (
+      SELECT new_series_id FROM duplicate_groups
+      WHERE duplicate_groups.template_id   = schedule_items.template_id
+        AND duplicate_groups.kind          = schedule_items.kind
+        AND duplicate_groups.title         = schedule_items.title
+        AND duplicate_groups.category_id   = schedule_items.category_id
+        AND duplicate_groups.start_minute  = schedule_items.start_minute
+        AND IFNULL(duplicate_groups.end_minute, -1) = IFNULL(schedule_items.end_minute, -1)
+    )
+    WHERE series_id IS NULL
+      AND EXISTS (
+        SELECT 1 FROM duplicate_groups
+        WHERE duplicate_groups.template_id   = schedule_items.template_id
+          AND duplicate_groups.kind          = schedule_items.kind
+          AND duplicate_groups.title         = schedule_items.title
+          AND duplicate_groups.category_id   = schedule_items.category_id
+          AND duplicate_groups.start_minute  = schedule_items.start_minute
+          AND IFNULL(duplicate_groups.end_minute, -1) = IFNULL(schedule_items.end_minute, -1)
+      );
+  `);
 }
 
 function runMigrations(db: SqliteDatabase) {
@@ -173,18 +239,16 @@ function seedIfEmpty(db: SqliteDatabase) {
   ).run(DEFAULT_TEMPLATE_ID, "Fictional planning template");
 
   const bounds = db.prepare(
-    "INSERT INTO day_bounds (template_id, weekday, wake_minute, sleep_minute, buffer_before, buffer_after) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO day_bounds (template_id, weekday, wake_minute, sleep_minute) VALUES (?, ?, ?, ?)",
   );
-  const sleepByDay = [1380, 1395, 1380, 1380, 1365, 1410, 1410];
-  const wakeByDay = [390, 405, 390, 390, 375, 450, 450];
+  const wakeByDay = [240, 240, 240, 240, 240, 240, 240];
+  const sleepByDay = [1320, 1320, 1320, 1320, 1320, 1320, 1320];
   for (let weekday = 1; weekday <= 7; weekday++) {
     bounds.run(
       DEFAULT_TEMPLATE_ID,
       weekday,
       wakeByDay[weekday - 1],
       sleepByDay[weekday - 1],
-      60,
-      60,
     );
   }
 
@@ -422,9 +486,109 @@ function rowToItem(row: ItemRow): ScheduleItem {
     endMinute: row.end_minute,
     categoryId: row.category_id,
     notes: row.notes,
-    completed: Boolean(row.completed),
     source: row.source,
+    seriesId: row.series_id,
   };
+}
+
+function listTodosInternal(db: SqliteDatabase): Todo[] {
+  return (
+    db
+      .prepare(
+        "SELECT id, title, kind, category_id, duration_minutes, sort_order FROM todos ORDER BY sort_order",
+      )
+      .all() as TodoRow[]
+  ).map(rowToTodo);
+}
+
+export function listTodos(): Todo[] {
+  return listTodosInternal(getDb());
+}
+
+export function createTodo(input: TodoInput): Todo {
+  const db = getDb();
+  const id = randomUUID();
+  const maxSort = (
+    db.prepare("SELECT COALESCE(MAX(sort_order), 0) AS max FROM todos").get() as {
+      max: number;
+    }
+  ).max;
+  db.prepare(
+    `INSERT INTO todos (id, title, kind, category_id, duration_minutes, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    input.title.trim() || "New todo",
+    input.kind,
+    input.categoryId ?? null,
+    input.durationMinutes ?? null,
+    maxSort + 1,
+  );
+  return rowToTodo(
+    db.prepare("SELECT * FROM todos WHERE id = ?").get(id) as TodoRow,
+  );
+}
+
+export function updateTodo(id: string, patch: Partial<TodoInput>): Todo | null {
+  const db = getDb();
+  const sets: string[] = [];
+  const values: (string | number | null)[] = [];
+  if (patch.title !== undefined) {
+    sets.push("title = ?");
+    values.push(patch.title.trim() || "New todo");
+  }
+  if (patch.kind !== undefined) {
+    sets.push("kind = ?");
+    values.push(patch.kind);
+  }
+  if (patch.categoryId !== undefined) {
+    sets.push("category_id = ?");
+    values.push(patch.categoryId);
+  }
+  if (patch.durationMinutes !== undefined) {
+    sets.push("duration_minutes = ?");
+    values.push(patch.durationMinutes);
+  }
+  if (sets.length === 0) {
+    const row = db
+      .prepare("SELECT * FROM todos WHERE id = ?")
+      .get(id) as TodoRow | undefined;
+    return row ? rowToTodo(row) : null;
+  }
+  values.push(id);
+  db.prepare(`UPDATE todos SET ${sets.join(", ")} WHERE id = ?`).run(...values);
+  const row = db
+    .prepare("SELECT * FROM todos WHERE id = ?")
+    .get(id) as TodoRow | undefined;
+  return row ? rowToTodo(row) : null;
+}
+
+export function deleteTodo(id: string) {
+  getDb().prepare("DELETE FROM todos WHERE id = ?").run(id);
+}
+
+export function reorderTodo(id: string, direction: "up" | "down") {
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT id, sort_order FROM todos ORDER BY sort_order")
+    .all() as { id: string; sort_order: number }[];
+  const idx = rows.findIndex((r) => r.id === id);
+  if (idx < 0) return;
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= rows.length) return;
+  const me = rows[idx];
+  const other = rows[swapIdx];
+  db.exec("BEGIN");
+  try {
+    const update = db.prepare("UPDATE todos SET sort_order = ? WHERE id = ?");
+    update.run(-1, me.id);
+    update.run(me.sort_order, other.id);
+    update.run(other.sort_order, me.id);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function getWeekView(dateParam?: string): WeekView {
@@ -436,9 +600,7 @@ export function getWeekView(dateParam?: string): WeekView {
     .get(activeId) as TemplateRow;
   const categories = (
     db
-      .prepare(
-        "SELECT * FROM categories WHERE archived = 0 ORDER BY sort_order",
-      )
+      .prepare("SELECT * FROM categories ORDER BY archived, sort_order")
       .all() as CategoryRow[]
   ).map((row) => ({
     id: row.id,
@@ -482,8 +644,6 @@ export function getWeekView(dateParam?: string): WeekView {
         weekday,
         wakeMinute: bound.wake_minute,
         sleepMinute: bound.sleep_minute,
-        bufferBefore: bound.buffer_before,
-        bufferAfter: bound.buffer_after,
       },
       items: dayItems,
       totalMinutes: dayItems.reduce(
@@ -511,19 +671,43 @@ export function getWeekView(dateParam?: string): WeekView {
     dailyTotals: calculateDailyTotals(items),
     categoryBudgets: calculateCategoryBudgets(weeklyTotals, categories),
     overlapWarnings: findOverlaps(items),
+    todos: listTodosInternal(db),
+    categoryUsage: categoryUsageMap(db),
   };
+}
+
+function categoryUsageMap(db: ReturnType<typeof getDb>): Record<string, number> {
+  const usage: Record<string, number> = {};
+  const itemRows = db
+    .prepare(
+      "SELECT category_id AS id, COUNT(*) AS n FROM schedule_items WHERE category_id IS NOT NULL GROUP BY category_id",
+    )
+    .all() as { id: string; n: number }[];
+  const todoRows = db
+    .prepare(
+      "SELECT category_id AS id, COUNT(*) AS n FROM todos WHERE category_id IS NOT NULL GROUP BY category_id",
+    )
+    .all() as { id: string; n: number }[];
+  for (const row of itemRows) usage[row.id] = (usage[row.id] ?? 0) + row.n;
+  for (const row of todoRows) usage[row.id] = (usage[row.id] ?? 0) + row.n;
+  return usage;
 }
 
 export function upsertItem(input: ItemInput): ScheduleItem {
   const db = getDb();
   const id = input.id ?? randomUUID();
-  const templateId = input.id
-    ? ((
-        db
-          .prepare("SELECT template_id FROM schedule_items WHERE id = ?")
-          .get(input.id) as { template_id: string } | undefined
-      )?.template_id ?? activeTemplateId(db))
-    : activeTemplateId(db);
+  const existing = input.id
+    ? (db
+        .prepare(
+          "SELECT template_id, series_id FROM schedule_items WHERE id = ?",
+        )
+        .get(input.id) as
+        | { template_id: string; series_id: string | null }
+        | undefined)
+    : undefined;
+  const templateId = existing?.template_id ?? activeTemplateId(db);
+  const seriesId =
+    input.seriesId !== undefined ? input.seriesId : (existing?.series_id ?? null);
   const snappedStart = snapMinute(input.startMinute);
   const startMinute =
     input.kind === "block"
@@ -548,9 +732,9 @@ export function upsertItem(input: ItemInput): ScheduleItem {
   }
   db.prepare(
     `INSERT INTO schedule_items
-      (id, template_id, kind, title, weekday, start_minute, end_minute, category_id, notes, completed, source, created_at, updated_at)
+      (id, template_id, kind, title, weekday, start_minute, end_minute, category_id, notes, source, series_id, created_at, updated_at)
      VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'template', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, 'template', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
      ON CONFLICT(id) DO UPDATE SET
       kind = excluded.kind,
       title = excluded.title,
@@ -559,7 +743,7 @@ export function upsertItem(input: ItemInput): ScheduleItem {
       end_minute = excluded.end_minute,
       category_id = excluded.category_id,
       notes = excluded.notes,
-      completed = excluded.completed,
+      series_id = excluded.series_id,
       updated_at = CURRENT_TIMESTAMP`,
   ).run(
     id,
@@ -571,15 +755,102 @@ export function upsertItem(input: ItemInput): ScheduleItem {
     endMinute,
     input.categoryId,
     input.notes ?? "",
-    input.completed ? 1 : 0,
+    seriesId,
   );
   return rowToItem(
     db.prepare("SELECT * FROM schedule_items WHERE id = ?").get(id) as ItemRow,
   );
 }
 
+export function createItems(
+  input: ItemInput,
+  weekdays: Weekday[],
+): ScheduleItem[] {
+  const unique = Array.from(new Set(weekdays)).sort() as Weekday[];
+  if (unique.length === 0) return [];
+  const seriesId = unique.length >= 2 ? randomUUID() : null;
+  return unique.map((weekday) =>
+    upsertItem({
+      ...input,
+      id: undefined,
+      weekday,
+      seriesId,
+    }),
+  );
+}
+
+export function updateSeries(
+  seriesId: string,
+  patch: ItemInput,
+  targetWeekdays: Weekday[],
+  templateId: string,
+): ScheduleItem[] {
+  const db = getDb();
+  // Series IDs only have meaning within a single template. A duplicate
+  // template inherits items but each copy is its own sandbox — never reach
+  // across templates here.
+  const siblings = db
+    .prepare(
+      "SELECT * FROM schedule_items WHERE series_id = ? AND template_id = ?",
+    )
+    .all(seriesId, templateId) as ItemRow[];
+  if (siblings.length === 0) return [];
+
+  const desired = new Set(targetWeekdays);
+  for (const row of siblings) {
+    if (!desired.has(row.weekday)) {
+      db.prepare("DELETE FROM schedule_items WHERE id = ?").run(row.id);
+    }
+  }
+
+  const existingByWeekday = new Map<Weekday, ItemRow>();
+  for (const row of siblings) {
+    if (desired.has(row.weekday)) existingByWeekday.set(row.weekday, row);
+  }
+
+  const sortedTargets = Array.from(desired).sort() as Weekday[];
+  const survivors = sortedTargets.map((weekday) => {
+    const existing = existingByWeekday.get(weekday);
+    return upsertItem({
+      ...patch,
+      id: existing?.id,
+      weekday,
+      seriesId,
+    });
+  });
+
+  // A series of one is just a standalone item — drop the series_id so the
+  // visual marker disappears and future edits don't carry series semantics.
+  if (survivors.length === 1) {
+    detachItem(survivors[0].id);
+    survivors[0] = { ...survivors[0], seriesId: null };
+  }
+  return survivors;
+}
+
+export function detachItem(id: string) {
+  getDb()
+    .prepare("UPDATE schedule_items SET series_id = NULL WHERE id = ?")
+    .run(id);
+}
+
+export function getItemTemplateId(id: string): string | null {
+  const row = getDb()
+    .prepare("SELECT template_id FROM schedule_items WHERE id = ?")
+    .get(id) as { template_id: string } | undefined;
+  return row?.template_id ?? null;
+}
+
 export function deleteItem(id: string) {
   getDb().prepare("DELETE FROM schedule_items WHERE id = ?").run(id);
+}
+
+export function deleteSeries(seriesId: string, templateId: string) {
+  getDb()
+    .prepare(
+      "DELETE FROM schedule_items WHERE series_id = ? AND template_id = ?",
+    )
+    .run(seriesId, templateId);
 }
 
 export function updateCategory(input: CategoryUpdate) {
@@ -601,6 +872,14 @@ export function updateCategory(input: CategoryUpdate) {
     sets.push("target_minutes = ?");
     values.push(input.targetMinutes);
   }
+  if (input.archived !== undefined) {
+    sets.push("archived = ?");
+    values.push(input.archived ? 1 : 0);
+  }
+  if (input.sortOrder !== undefined) {
+    sets.push("sort_order = ?");
+    values.push(input.sortOrder);
+  }
   if (sets.length === 0) return;
   values.push(input.id);
   getDb()
@@ -608,16 +887,88 @@ export function updateCategory(input: CategoryUpdate) {
     .run(...values);
 }
 
+export function createCategory(input: CategoryCreateInput) {
+  const db = getDb();
+  const id = randomUUID();
+  const maxSort = (
+    db.prepare("SELECT COALESCE(MAX(sort_order), 0) AS max FROM categories").get() as {
+      max: number;
+    }
+  ).max;
+  db.prepare(
+    `INSERT INTO categories (id, name, color, sort_order, archived, budget_mode, target_minutes)
+     VALUES (?, ?, ?, ?, 0, ?, ?)`,
+  ).run(
+    id,
+    input.name.trim() || "New category",
+    input.color,
+    maxSort + 1,
+    input.budgetMode ?? "observation",
+    input.targetMinutes ?? null,
+  );
+  return id;
+}
+
+export function reorderCategory(id: string, direction: "up" | "down") {
+  const db = getDb();
+  const active = db
+    .prepare(
+      "SELECT id, sort_order FROM categories WHERE archived = 0 ORDER BY sort_order",
+    )
+    .all() as { id: string; sort_order: number }[];
+  const idx = active.findIndex((c) => c.id === id);
+  if (idx < 0) return;
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= active.length) return;
+  const me = active[idx];
+  const other = active[swapIdx];
+  // Two-step swap with a temporary value avoids any uniqueness collisions
+  // and guarantees ordering even if a future migration adds a unique
+  // constraint on sort_order.
+  db.exec("BEGIN");
+  try {
+    const update = db.prepare(
+      "UPDATE categories SET sort_order = ? WHERE id = ?",
+    );
+    update.run(-1, me.id);
+    update.run(me.sort_order, other.id);
+    update.run(other.sort_order, me.id);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export class CategoryInUseError extends Error {
+  constructor() {
+    super("Category in use");
+    this.name = "CategoryInUseError";
+  }
+}
+
+export function deleteCategory(id: string) {
+  const db = getDb();
+  const items = db
+    .prepare("SELECT COUNT(*) AS count FROM schedule_items WHERE category_id = ?")
+    .get(id) as { count: number };
+  const todos = db
+    .prepare("SELECT COUNT(*) AS count FROM todos WHERE category_id = ?")
+    .get(id) as { count: number };
+  if (items.count + todos.count > 0) {
+    throw new CategoryInUseError();
+  }
+  db.prepare("DELETE FROM categories WHERE id = ?").run(id);
+}
+
 export function updateDayBounds(input: DayBounds) {
   const db = getDb();
   db.prepare(
-    `UPDATE day_bounds SET wake_minute = ?, sleep_minute = ?, buffer_before = ?, buffer_after = ?
+    `UPDATE day_bounds SET wake_minute = ?, sleep_minute = ?
        WHERE template_id = ? AND weekday = ?`,
   ).run(
     input.wakeMinute,
     input.sleepMinute,
-    input.bufferBefore,
-    input.bufferAfter,
     activeTemplateId(db),
     input.weekday,
   );
@@ -642,26 +993,31 @@ export function createVersion(input: VersionInput): ScheduleVersion {
       .prepare("SELECT * FROM day_bounds WHERE template_id = ?")
       .all(sourceId) as BoundsRow[];
     const insertBounds = db.prepare(
-      "INSERT INTO day_bounds (template_id, weekday, wake_minute, sleep_minute, buffer_before, buffer_after) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO day_bounds (template_id, weekday, wake_minute, sleep_minute) VALUES (?, ?, ?, ?)",
     );
     bounds.forEach((row) =>
-      insertBounds.run(
-        id,
-        row.weekday,
-        row.wake_minute,
-        row.sleep_minute,
-        row.buffer_before,
-        row.buffer_after,
-      ),
+      insertBounds.run(id, row.weekday, row.wake_minute, row.sleep_minute),
     );
     const items = db
       .prepare("SELECT * FROM schedule_items WHERE template_id = ?")
       .all(sourceId) as ItemRow[];
     const insertItem = db.prepare(
       `INSERT INTO schedule_items
-        (id, template_id, kind, title, weekday, start_minute, end_minute, category_id, notes, completed, source, created_at, updated_at)
+        (id, template_id, kind, title, weekday, start_minute, end_minute, category_id, notes, source, series_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
     );
+    // Regenerate series IDs in the copy so it's a true sandbox; sharing
+    // series IDs across templates means a series edit on one template would
+    // mutate the other.
+    const seriesIdMap = new Map<string, string>();
+    const remapSeries = (oldId: string | null): string | null => {
+      if (!oldId) return null;
+      const cached = seriesIdMap.get(oldId);
+      if (cached) return cached;
+      const fresh = randomUUID();
+      seriesIdMap.set(oldId, fresh);
+      return fresh;
+    };
     items.forEach((item) =>
       insertItem.run(
         randomUUID(),
@@ -673,8 +1029,8 @@ export function createVersion(input: VersionInput): ScheduleVersion {
         item.end_minute,
         item.category_id,
         item.notes,
-        item.completed,
         item.source,
+        remapSeries(item.series_id),
       ),
     );
     setSetting(db, "active_template_id", id);
