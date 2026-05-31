@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { GripVertical, X } from "lucide-svelte";
+  import { GripVertical, X, ChevronLeft, ChevronRight, ListTodo } from "lucide-svelte";
   import type { Category, ItemKind, Todo } from "$lib/types";
 
   type Props = {
@@ -27,7 +27,17 @@
   let { todos, categories, onCreate, onUpdate, onDelete, onDragStart }: Props =
     $props();
 
+  let collapsed = $state(false);
   let newTitle = $state("");
+
+  $effect(() => {
+    const stored = localStorage.getItem("schedule-studio-todo-collapsed");
+    if (stored === "true") collapsed = true;
+  });
+
+  $effect(() => {
+    localStorage.setItem("schedule-studio-todo-collapsed", String(collapsed));
+  });
   let newKind = $state<ItemKind>("block");
 
   const activeCategories = $derived(categories.filter((c) => !c.archived));
@@ -65,18 +75,54 @@
   }
 </script>
 
-<aside
-  class="border-border bg-surface flex h-full w-[300px] shrink-0 flex-col border-l"
-  data-testid="todo-sidebar"
->
-  <div class="border-border flex items-center justify-between border-b px-4 py-3">
-    <h2 class="text-[13px] font-semibold tracking-tight">To do</h2>
-    <span class="text-muted-foreground text-[10px] uppercase tracking-[0.12em]">
-      Drag → grid
-    </span>
-  </div>
+{#if collapsed}
+  <aside
+    class="border-border bg-surface flex h-full w-10 shrink-0 flex-col items-center border-l"
+    data-testid="todo-sidebar-collapsed"
+  >
+    <button
+      type="button"
+      class="text-muted-foreground hover:text-foreground flex h-10 w-10 items-center justify-center transition-colors"
+      aria-label="Expand todo sidebar"
+      title="To do"
+      onclick={() => (collapsed = false)}
+    >
+      <ChevronLeft size={16} />
+    </button>
+    <div class="mt-2 flex flex-col items-center gap-3 py-2">
+      <ListTodo size={16} class="text-muted-foreground" />
+      {#if todos.length > 0}
+        <span
+          class="bg-primary/20 text-primary flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold"
+        >
+          {todos.length}
+        </span>
+      {/if}
+    </div>
+  </aside>
+{:else}
+  <aside
+    class="border-border bg-surface flex h-full w-[300px] shrink-0 flex-col border-l"
+    data-testid="todo-sidebar"
+  >
+    <div class="border-border flex items-center justify-between border-b px-4 py-3">
+      <h2 class="text-[13px] font-semibold tracking-tight">To do</h2>
+      <div class="flex items-center gap-2">
+        <span class="text-muted-foreground text-[10px] uppercase tracking-[0.12em]">
+          Drag → grid
+        </span>
+        <button
+          type="button"
+          class="text-muted-foreground hover:text-foreground -mr-1 rounded p-0.5 transition-colors"
+          aria-label="Collapse todo sidebar"
+          onclick={() => (collapsed = true)}
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+    </div>
 
-  <form
+    <form
     class="border-border bg-muted/15 flex items-center gap-2 border-b px-3 py-3"
     onsubmit={(event) => {
       event.preventDefault();
@@ -240,4 +286,5 @@
       </ul>
     {/if}
   </div>
-</aside>
+  </aside>
+{/if}

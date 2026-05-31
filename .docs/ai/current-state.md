@@ -8,6 +8,10 @@ Schedule Studio is a public MIT-licensed SvelteKit app with local SQLite persist
 
 Latest verification: `pnpm check`, `pnpm test`, `pnpm build`, local Docker image build, `/healthz` container smoke test, Home Assistant Ingress header smoke test. `pnpm test:e2e` was run; the new "set default" test passes, and pre-existing e2e failures (todo-sidebar "Add" button colliding with toolbar "Add" button locator in existing tests) are unrelated to this change.
 
+## Recent Changes
+
+- Todo sidebar is now collapsible to a 40px strip (persisted in `localStorage` as `schedule-studio-todo-collapsed`).
+
 ## Notes
 
 - Runtime data lives under `.local/` by default and is ignored by git.
