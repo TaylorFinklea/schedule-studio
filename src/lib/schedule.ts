@@ -97,23 +97,57 @@ export function calculateCategoryBudgets(
   weeklyTotals: CategoryTotal[],
   categories: Category[],
 ): CategoryBudget[] {
+  const actualFor = (id: string) =>
+    weeklyTotals.find((total) => total.categoryId === id)?.minutes ?? 0;
+
   return categories.map((category) => {
-    const actualMinutes =
-      weeklyTotals.find((total) => total.categoryId === category.id)?.minutes ??
-      0;
+    const actualMinutes = actualFor(category.id);
+    // A parent rolls up its own actual plus every child's actual; a child
+    // (or a parent with no children) rolls up to just its own.
+    const rolledUpActualMinutes =
+      category.parentId === null
+        ? actualMinutes +
+          categories
+            .filter((other) => other.parentId === category.id)
+            .reduce((sum, child) => sum + actualFor(child.id), 0)
+        : actualMinutes;
     const targetMinutes = category.targetMinutes ?? null;
     const deltaMinutes =
       category.budgetMode === "observation" || targetMinutes === null
         ? null
-        : actualMinutes - targetMinutes;
+        : rolledUpActualMinutes - targetMinutes;
     return {
       categoryId: category.id,
+      parentId: category.parentId,
       mode: category.budgetMode,
       targetMinutes,
       actualMinutes,
+      rolledUpActualMinutes,
       deltaMinutes,
     };
   });
+}
+
+/**
+ * Non-archived categories in display order: each top-level parent immediately
+ * followed by its non-archived children. Children of an archived parent are
+ * omitted entirely (the parent hides its whole subtree from pickers). Used by
+ * the budget strip and the item-editor category picker.
+ */
+export function orderedVisibleCategories(categories: Category[]): Category[] {
+  const bySort = (a: Category, b: Category) => a.sortOrder - b.sortOrder;
+  const parents = categories
+    .filter((category) => category.parentId === null && !category.archived)
+    .sort(bySort);
+  const result: Category[] = [];
+  for (const parent of parents) {
+    result.push(parent);
+    const children = categories
+      .filter((child) => child.parentId === parent.id && !child.archived)
+      .sort(bySort);
+    result.push(...children);
+  }
+  return result;
 }
 
 export function findOverlaps(items: ScheduleItem[]): OverlapWarning[] {

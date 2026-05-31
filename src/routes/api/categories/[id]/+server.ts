@@ -1,5 +1,6 @@
 import { json } from "@sveltejs/kit";
 import {
+  CategoryHierarchyError,
   CategoryInUseError,
   deleteCategory,
   updateCategory,
@@ -31,8 +32,18 @@ export async function PUT({ params, request }) {
   if (typeof payload.sortOrder === "number") {
     update.sortOrder = payload.sortOrder;
   }
-  updateCategory(update);
-  return json({ ok: true });
+  if (payload.parentId === null || typeof payload.parentId === "string") {
+    update.parentId = payload.parentId;
+  }
+  try {
+    updateCategory(update);
+    return json({ ok: true });
+  } catch (error) {
+    if (error instanceof CategoryHierarchyError) {
+      return json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
 }
 
 export function DELETE({ params }) {

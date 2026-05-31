@@ -2,6 +2,7 @@
 
 ## Done (recent)
 
+- [x] Subcategories: two-level category hierarchy (`categories.parent_id`). Items assign to parent or child; parents roll up own + children's actuals (`rolledUpActualMinutes`) while keeping independent targets/colors. Grouped item picker, indented BudgetStrip pills, per-parent "Add subcategory" in CategoryEditor. Archiving a parent hides its subtree from pickers; depth capped at 2; parents with children can't be deleted.
 - [x] Design-led rewrite: calm UI, anchored editor popover, click-to-create, pin lane, two-theme cut
 - [x] Per-category budget modes (target / minimum / observation) with weekly deltas in the BudgetStrip
 - [x] Item series (recurring blocks/pins): create across N weekdays, edit propagates, Detach to make standalone

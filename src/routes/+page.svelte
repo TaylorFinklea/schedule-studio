@@ -10,6 +10,7 @@
   import {
     formatDuration,
     formatTime,
+    orderedVisibleCategories,
     parseTimeInput,
     SNAP_MINUTES,
     snapMinute,
@@ -522,6 +523,7 @@
       targetMinutes?: number | null;
       archived?: boolean;
       sortOrder?: number;
+      parentId?: string | null;
     },
   ) {
     await fetch(apiPath(`/api/categories/${id}`), {
@@ -535,6 +537,7 @@
   async function createCategoryRequest(payload: {
     name: string;
     color: string;
+    parentId?: string | null;
   }) {
     await fetch(apiPath("/api/categories"), {
       method: "POST",
@@ -1693,8 +1696,10 @@
               aria-label="Category"
               bind:value={draft.categoryId}
             >
-              {#each week.categories as category}
-                <option value={category.id}>{category.name}</option>
+              {#each orderedVisibleCategories(week.categories) as category}
+                <option value={category.id}>
+                  {category.parentId !== null ? "  └ " : ""}{category.name}
+                </option>
               {/each}
             </select>
           </label>

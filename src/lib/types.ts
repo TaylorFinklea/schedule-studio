@@ -13,6 +13,8 @@ export type Category = {
   archived: boolean;
   budgetMode: BudgetMode;
   targetMinutes: number | null;
+  /** NULL for a top-level parent; otherwise the owning parent's id. */
+  parentId: string | null;
 };
 
 export type DayBounds = {
@@ -48,9 +50,14 @@ export type CategoryTotal = {
 
 export type CategoryBudget = {
   categoryId: string;
+  parentId: string | null;
   mode: BudgetMode;
   targetMinutes: number | null;
+  /** Minutes from items assigned directly to this category. */
   actualMinutes: number;
+  /** For a parent: own actual + sum of children's actuals. For a child: equals actualMinutes. */
+  rolledUpActualMinutes: number;
+  /** Compares target against the rolled-up actual; null in observation mode or without a target. */
   deltaMinutes: number | null;
 };
 
@@ -134,6 +141,7 @@ export type CategoryUpdate = {
   targetMinutes?: number | null;
   archived?: boolean;
   sortOrder?: number;
+  parentId?: string | null;
 };
 
 export type CategoryCreateInput = {
@@ -141,6 +149,7 @@ export type CategoryCreateInput = {
   color: string;
   budgetMode?: BudgetMode;
   targetMinutes?: number | null;
+  parentId?: string | null;
 };
 
 export type VersionInput = {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Category, CategoryBudget } from "$lib/types";
-  import { formatDuration } from "$lib/schedule";
+  import { formatDuration, orderedVisibleCategories } from "$lib/schedule";
 
   type Props = {
     categories: Category[];
@@ -9,16 +9,26 @@
 
   let { categories, budgets }: Props = $props();
 
+  // Parent immediately followed by its children, archived (and children of
+  // archived parents) omitted — mirrors the item-editor category picker.
   const visibleBudgets = $derived(
-    budgets.filter((budget) =>
-      categories.some(
-        (category) => category.id === budget.categoryId && !category.archived,
-      ),
-    ),
+    orderedVisibleCategories(categories)
+      .map((category) =>
+        budgets.find((budget) => budget.categoryId === category.id),
+      )
+      .filter((budget): budget is CategoryBudget => budget !== undefined),
   );
 
   function categoryFor(id: string): Category | undefined {
     return categories.find((category) => category.id === id);
+  }
+
+  // Parents display the rolled-up total (own items + subcategories); children
+  // display only their own minutes.
+  function displayActual(budget: CategoryBudget): number {
+    return budget.parentId === null
+      ? budget.rolledUpActualMinutes
+      : budget.actualMinutes;
   }
 
   function deltaText(budget: CategoryBudget): string {
@@ -45,6 +55,8 @@
     for (const budget of visibleBudgets) {
       if (budget.targetMinutes !== null && budget.mode !== "observation") {
         targeted += budget.targetMinutes;
+        // Own minutes (not rolled up) so a parent + child both having targets
+        // never double-counts the child's time in the footer summary.
         actualOfTargeted += budget.actualMinutes;
       }
     }
@@ -60,15 +72,21 @@
     {@const category = categoryFor(budget.categoryId)}
     {#if category}
       {@const tone = deltaTone(budget)}
+      {@const isChild = budget.parentId !== null}
       <span
-        class="border-border bg-surface-2/60 hover:bg-surface-2 flex flex-none items-center gap-2 rounded-full border px-3 py-1 transition-colors"
+        class="border-border bg-surface-2/60 hover:bg-surface-2 flex flex-none items-center gap-2 rounded-full border px-3 py-1 transition-colors {isChild
+          ? 'opacity-80'
+          : ''}"
         title="{category.name}: {formatDuration(
-          budget.actualMinutes,
+          displayActual(budget),
         )}{budget.targetMinutes !== null
           ? ` of ${formatDuration(budget.targetMinutes)} ${budget.mode}`
           : ' (observed)'}"
         data-testid="budget-pill-{budget.categoryId}"
       >
+        {#if isChild}
+          <span class="text-muted-foreground/60 -mr-1" aria-hidden="true">└</span>
+        {/if}
         <span
           class="block h-1.5 w-1.5 rounded-full"
           style="background-color: {category.color};"
@@ -76,7 +94,7 @@
         ></span>
         <span class="text-foreground font-medium">{category.name}</span>
         <span class="text-muted-foreground tabular-nums">
-          {formatDuration(budget.actualMinutes)}{#if budget.targetMinutes !== null}
+          {formatDuration(displayActual(budget))}{#if budget.targetMinutes !== null}
             <span class="text-muted-foreground/60">
               / {formatDuration(budget.targetMinutes)}</span
             >

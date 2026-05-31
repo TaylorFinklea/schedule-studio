@@ -39,6 +39,7 @@ type CategoryRow = {
   archived: 0 | 1;
   budget_mode: BudgetMode;
   target_minutes: number | null;
+  parent_id: string | null;
 };
 
 type BoundsRow = {
@@ -96,6 +97,7 @@ const MIGRATIONS = [
   "0003_default_hours_and_series",
   "0004_drop_legacy",
   "0005_todos",
+  "0006_subcategories",
 ] as const;
 
 type SqliteDatabase = InstanceType<typeof DatabaseSync>;
@@ -610,6 +612,7 @@ export function getWeekView(dateParam?: string): WeekView {
     archived: Boolean(row.archived),
     budgetMode: row.budget_mode,
     targetMinutes: row.target_minutes,
+    parentId: row.parent_id,
   }));
   const boundsRows = db
     .prepare("SELECT * FROM day_bounds WHERE template_id = ? ORDER BY weekday")
@@ -688,8 +691,16 @@ function categoryUsageMap(db: ReturnType<typeof getDb>): Record<string, number> 
       "SELECT category_id AS id, COUNT(*) AS n FROM todos WHERE category_id IS NOT NULL GROUP BY category_id",
     )
     .all() as { id: string; n: number }[];
+  // Parents with subcategories also can't be deleted, so surface them as
+  // "in use" to keep the Delete button disabled in the UI.
+  const childRows = db
+    .prepare(
+      "SELECT parent_id AS id, COUNT(*) AS n FROM categories WHERE parent_id IS NOT NULL GROUP BY parent_id",
+    )
+    .all() as { id: string; n: number }[];
   for (const row of itemRows) usage[row.id] = (usage[row.id] ?? 0) + row.n;
   for (const row of todoRows) usage[row.id] = (usage[row.id] ?? 0) + row.n;
+  for (const row of childRows) usage[row.id] = (usage[row.id] ?? 0) + row.n;
   return usage;
 }
 
@@ -853,9 +864,57 @@ export function deleteSeries(seriesId: string, templateId: string) {
     .run(seriesId, templateId);
 }
 
+export class CategoryHierarchyError extends Error {
+  constructor(message = "Invalid category hierarchy") {
+    super(message);
+    this.name = "CategoryHierarchyError";
+  }
+}
+
+// A category may be nested at most one level deep. `parentId` must reference a
+// different, existing, top-level category, and the category being reparented
+// must not itself already have children (that would create a third level).
+function assertValidParent(
+  db: SqliteDatabase,
+  categoryId: string | null,
+  parentId: string,
+) {
+  if (parentId === categoryId) {
+    throw new CategoryHierarchyError("A category cannot be its own parent");
+  }
+  const parent = db
+    .prepare("SELECT parent_id FROM categories WHERE id = ?")
+    .get(parentId) as { parent_id: string | null } | undefined;
+  if (!parent) {
+    throw new CategoryHierarchyError("Parent category not found");
+  }
+  if (parent.parent_id !== null) {
+    throw new CategoryHierarchyError("Subcategories cannot be nested further");
+  }
+  if (categoryId !== null) {
+    const childCount = (
+      db
+        .prepare("SELECT COUNT(*) AS count FROM categories WHERE parent_id = ?")
+        .get(categoryId) as { count: number }
+    ).count;
+    if (childCount > 0) {
+      throw new CategoryHierarchyError(
+        "A category with subcategories cannot become a subcategory",
+      );
+    }
+  }
+}
+
 export function updateCategory(input: CategoryUpdate) {
   const sets: string[] = [];
   const values: (string | number | null)[] = [];
+  if (input.parentId !== undefined) {
+    if (input.parentId !== null) {
+      assertValidParent(getDb(), input.id, input.parentId);
+    }
+    sets.push("parent_id = ?");
+    values.push(input.parentId);
+  }
   if (input.name !== undefined) {
     sets.push("name = ?");
     values.push(input.name);
@@ -889,15 +948,26 @@ export function updateCategory(input: CategoryUpdate) {
 
 export function createCategory(input: CategoryCreateInput) {
   const db = getDb();
+  const parentId = input.parentId ?? null;
+  if (parentId !== null) {
+    assertValidParent(db, null, parentId);
+  }
   const id = randomUUID();
+  // Sort order is scoped to siblings so reordering stays within a parent.
   const maxSort = (
-    db.prepare("SELECT COALESCE(MAX(sort_order), 0) AS max FROM categories").get() as {
+    db
+      .prepare(
+        parentId === null
+          ? "SELECT COALESCE(MAX(sort_order), 0) AS max FROM categories WHERE parent_id IS NULL"
+          : "SELECT COALESCE(MAX(sort_order), 0) AS max FROM categories WHERE parent_id = ?",
+      )
+      .get(...(parentId === null ? [] : [parentId])) as {
       max: number;
     }
   ).max;
   db.prepare(
-    `INSERT INTO categories (id, name, color, sort_order, archived, budget_mode, target_minutes)
-     VALUES (?, ?, ?, ?, 0, ?, ?)`,
+    `INSERT INTO categories (id, name, color, sort_order, archived, budget_mode, target_minutes, parent_id)
+     VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
   ).run(
     id,
     input.name.trim() || "New category",
@@ -905,17 +975,29 @@ export function createCategory(input: CategoryCreateInput) {
     maxSort + 1,
     input.budgetMode ?? "observation",
     input.targetMinutes ?? null,
+    parentId,
   );
   return id;
 }
 
 export function reorderCategory(id: string, direction: "up" | "down") {
   const db = getDb();
+  const target = db
+    .prepare("SELECT parent_id FROM categories WHERE id = ?")
+    .get(id) as { parent_id: string | null } | undefined;
+  if (!target) return;
+  // Reorder only swaps with siblings sharing the same parent.
+  const parentId = target.parent_id;
   const active = db
     .prepare(
-      "SELECT id, sort_order FROM categories WHERE archived = 0 ORDER BY sort_order",
+      parentId === null
+        ? "SELECT id, sort_order FROM categories WHERE archived = 0 AND parent_id IS NULL ORDER BY sort_order"
+        : "SELECT id, sort_order FROM categories WHERE archived = 0 AND parent_id = ? ORDER BY sort_order",
     )
-    .all() as { id: string; sort_order: number }[];
+    .all(...(parentId === null ? [] : [parentId])) as {
+    id: string;
+    sort_order: number;
+  }[];
   const idx = active.findIndex((c) => c.id === id);
   if (idx < 0) return;
   const swapIdx = direction === "up" ? idx - 1 : idx + 1;
@@ -955,7 +1037,10 @@ export function deleteCategory(id: string) {
   const todos = db
     .prepare("SELECT COUNT(*) AS count FROM todos WHERE category_id = ?")
     .get(id) as { count: number };
-  if (items.count + todos.count > 0) {
+  const children = db
+    .prepare("SELECT COUNT(*) AS count FROM categories WHERE parent_id = ?")
+    .get(id) as { count: number };
+  if (items.count + todos.count + children.count > 0) {
     throw new CategoryInUseError();
   }
   db.prepare("DELETE FROM categories WHERE id = ?").run(id);

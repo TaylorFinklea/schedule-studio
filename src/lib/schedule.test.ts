@@ -5,10 +5,29 @@ import {
   findOverlaps,
   formatDuration,
   formatTime,
+  orderedVisibleCategories,
   parseTimeInput,
   snapMinute,
 } from "$lib/schedule";
 import type { Category, ScheduleItem } from "$lib/types";
+
+function cat(
+  id: string,
+  parentId: string | null,
+  sortOrder: number,
+  archived = false,
+): Category {
+  return {
+    id,
+    name: id,
+    color: "#7aa2f7",
+    sortOrder,
+    archived,
+    budgetMode: "observation",
+    targetMinutes: null,
+    parentId,
+  };
+}
 
 const categories: Category[] = [
   {
@@ -19,6 +38,7 @@ const categories: Category[] = [
     archived: false,
     budgetMode: "target",
     targetMinutes: 600,
+    parentId: null,
   },
   {
     id: "rest",
@@ -28,6 +48,7 @@ const categories: Category[] = [
     archived: false,
     budgetMode: "observation",
     targetMinutes: null,
+    parentId: null,
   },
 ];
 
@@ -113,18 +134,96 @@ describe("schedule helpers", () => {
     expect(calculateCategoryBudgets(totals, categories)).toEqual([
       {
         categoryId: "work",
+        parentId: null,
         mode: "target",
         targetMinutes: 600,
         actualMinutes: 180,
+        rolledUpActualMinutes: 180,
         deltaMinutes: -420,
       },
       {
         categoryId: "rest",
+        parentId: null,
         mode: "observation",
         targetMinutes: null,
         actualMinutes: 2,
+        rolledUpActualMinutes: 2,
         deltaMinutes: null,
       },
+    ]);
+  });
+
+  it("rolls a parent's actual up from its subcategories", () => {
+    const hierCategories: Category[] = [
+      {
+        id: "family",
+        name: "Family Time",
+        color: "#7aa2f7",
+        sortOrder: 1,
+        archived: false,
+        budgetMode: "target",
+        targetMinutes: 1200,
+        parentId: null,
+      },
+      {
+        id: "meals",
+        name: "Meals",
+        color: "#9ece6a",
+        sortOrder: 1,
+        archived: false,
+        budgetMode: "target",
+        targetMinutes: 360,
+        parentId: "family",
+      },
+    ];
+    const items: ScheduleItem[] = [
+      {
+        ...base,
+        id: "a",
+        kind: "block",
+        title: "Hang out",
+        weekday: 1,
+        startMinute: 600,
+        endMinute: 720,
+        categoryId: "family",
+      },
+      {
+        ...base,
+        id: "b",
+        kind: "block",
+        title: "Dinner",
+        weekday: 1,
+        startMinute: 1080,
+        endMinute: 1140,
+        categoryId: "meals",
+      },
+    ];
+    const totals = calculateWeeklyTotals(items, hierCategories);
+    const budgets = calculateCategoryBudgets(totals, hierCategories);
+    const family = budgets.find((b) => b.categoryId === "family")!;
+    const meals = budgets.find((b) => b.categoryId === "meals")!;
+    // Parent: own 120 + child 60 = 180 rolled up; delta vs 1200 target.
+    expect(family.actualMinutes).toBe(120);
+    expect(family.rolledUpActualMinutes).toBe(180);
+    expect(family.deltaMinutes).toBe(180 - 1200);
+    // Child: own minutes only.
+    expect(meals.actualMinutes).toBe(60);
+    expect(meals.rolledUpActualMinutes).toBe(60);
+    expect(meals.deltaMinutes).toBe(60 - 360);
+  });
+
+  it("orders categories parent-then-children and hides archived subtrees", () => {
+    const cats: Category[] = [
+      cat("p1", null, 1),
+      cat("p1-c2", "p1", 2),
+      cat("p1-c1", "p1", 1),
+      cat("p2", null, 2, true),
+      cat("p2-c1", "p2", 1),
+    ];
+    expect(orderedVisibleCategories(cats).map((c) => c.id)).toEqual([
+      "p1",
+      "p1-c1",
+      "p1-c2",
     ]);
   });
 
