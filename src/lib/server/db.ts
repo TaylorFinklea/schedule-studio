@@ -906,14 +906,32 @@ function assertValidParent(
 }
 
 export function updateCategory(input: CategoryUpdate) {
+  const db = getDb();
   const sets: string[] = [];
   const values: (string | number | null)[] = [];
   if (input.parentId !== undefined) {
     if (input.parentId !== null) {
-      assertValidParent(getDb(), input.id, input.parentId);
+      assertValidParent(db, input.id, input.parentId);
     }
     sets.push("parent_id = ?");
     values.push(input.parentId);
+    // Place the moved category at the end of its destination sibling group so
+    // its old (now foreign) sort_order can't collide with an existing sibling.
+    const destMax = (
+      db
+        .prepare(
+          input.parentId === null
+            ? "SELECT COALESCE(MAX(sort_order), 0) AS max FROM categories WHERE parent_id IS NULL AND id <> ?"
+            : "SELECT COALESCE(MAX(sort_order), 0) AS max FROM categories WHERE parent_id = ? AND id <> ?",
+        )
+        .get(
+          ...(input.parentId === null
+            ? [input.id]
+            : [input.parentId, input.id]),
+        ) as { max: number }
+    ).max;
+    sets.push("sort_order = ?");
+    values.push(destMax + 1);
   }
   if (input.name !== undefined) {
     sets.push("name = ?");
@@ -941,9 +959,9 @@ export function updateCategory(input: CategoryUpdate) {
   }
   if (sets.length === 0) return;
   values.push(input.id);
-  getDb()
-    .prepare(`UPDATE categories SET ${sets.join(", ")} WHERE id = ?`)
-    .run(...values);
+  db.prepare(`UPDATE categories SET ${sets.join(", ")} WHERE id = ?`).run(
+    ...values,
+  );
 }
 
 export function createCategory(input: CategoryCreateInput) {

@@ -7,6 +7,7 @@
     budgetMode?: BudgetMode;
     targetMinutes?: number | null;
     archived?: boolean;
+    parentId?: string | null;
   };
 
   type CategoryCreatePayload = {
@@ -51,6 +52,25 @@
     return categories
       .filter((c) => c.parentId === parentId && !c.archived)
       .sort(bySort);
+  }
+
+  // Top-level, non-archived categories a given category may be nested under
+  // (anything but itself). Empty when there are no other parents available.
+  function eligibleParents(category: Category): Category[] {
+    return categories
+      .filter(
+        (c) => c.parentId === null && !c.archived && c.id !== category.id,
+      )
+      .sort(bySort);
+  }
+
+  // A category can be reparented only if it has no children of its own
+  // (the hierarchy is capped at two levels).
+  function canReparent(category: Category): boolean {
+    return (
+      childrenOf(category.id).length === 0 &&
+      eligibleParents(category).length > 0
+    );
   }
 
   function parseHours(text: string): number | null {
@@ -120,6 +140,26 @@
         })}
     />
   </div>
+  {#if canReparent(category)}
+    <label class="mb-2 block text-[11px]">
+      <span class="text-muted-foreground mb-1 block">Parent</span>
+      <select
+        value={category.parentId ?? ""}
+        aria-label="Parent category"
+        class="border-border bg-muted/30 text-foreground w-full rounded-md border px-2 py-1.5 outline-none"
+        data-testid="category-parent-{category.id}"
+        onchange={(event) => {
+          const value = (event.currentTarget as HTMLSelectElement).value;
+          onUpdate(category.id, { parentId: value === "" ? null : value });
+        }}
+      >
+        <option value="">(top level)</option>
+        {#each eligibleParents(category) as parent (parent.id)}
+          <option value={parent.id}>{parent.name}</option>
+        {/each}
+      </select>
+    </label>
+  {/if}
   <div class="grid grid-cols-2 gap-2 text-[11px]">
     <label class="block">
       <span class="text-muted-foreground mb-1 block">Mode</span>

@@ -2,6 +2,7 @@
 
 ## Done (recent)
 
+- [x] Reparent existing categories: per-row "Parent" dropdown in CategoryEditor (top-level + eligible parents), shown only for categories without children; reuses the `parentId` update path. Backend reassigns `sort_order` to the end of the destination sibling group on a move so orders don't collide.
 - [x] Subcategories: two-level category hierarchy (`categories.parent_id`). Items assign to parent or child; parents roll up own + children's actuals (`rolledUpActualMinutes`) while keeping independent targets/colors. Grouped item picker, indented BudgetStrip pills, per-parent "Add subcategory" in CategoryEditor. Archiving a parent hides its subtree from pickers; depth capped at 2; parents with children can't be deleted.
 - [x] Design-led rewrite: calm UI, anchored editor popover, click-to-create, pin lane, two-theme cut
 - [x] Per-category budget modes (target / minimum / observation) with weekly deltas in the BudgetStrip

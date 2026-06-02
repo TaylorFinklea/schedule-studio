@@ -10,6 +10,7 @@ Latest verification (subcategories feature, 2026-05-31): `pnpm check` (0 errors)
 
 ## Recent Changes
 
+- Reparent existing categories via a per-row "Parent" dropdown in CategoryEditor (rendered only when the category has no children). `updateCategory` reassigns `sort_order` to the end of the destination sibling group on a move. Committed but NOT yet released to HA (no version bump since 0.1.3).
 - Subcategories: `categories.parent_id` self-FK (migration 0006), parent/child item assignment, rolled-up parent budgets, grouped pickers, per-parent "Add subcategory" in CategoryEditor, archive-hides-subtree, depth capped at 2. New helper `orderedVisibleCategories()` in `schedule.ts`.
 - Todo sidebar is now collapsible to a 40px strip (persisted in `localStorage` as `schedule-studio-todo-collapsed`).
 
