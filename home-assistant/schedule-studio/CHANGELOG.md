@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- Add schedule week anchoring, date-less weekday labels, all-day visible bounds controls, and pinned day labels in rows view.
+
 ## 0.1.1
 
 - Fix SQLite startup on Home Assistant by allowing the app to write the add-on `/data` mount.
