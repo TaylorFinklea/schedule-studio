@@ -1,5 +1,11 @@
 import { json } from "@sveltejs/kit";
-import { activateVersion, deleteVersion, renameVersion, setDefaultVersion } from "$lib/server/db";
+import {
+  activateVersion,
+  deleteVersion,
+  renameVersion,
+  setDefaultVersion,
+  updateVersionWeekStart,
+} from "$lib/server/db";
 
 export async function PUT({ params, request }) {
   const payload = await request.json();
@@ -9,6 +15,10 @@ export async function PUT({ params, request }) {
   }
   if (payload.action === "set-default") {
     setDefaultVersion(params.id);
+    return json({ ok: true });
+  }
+  if ("weekStartDate" in payload) {
+    updateVersionWeekStart(params.id, payload.weekStartDate ?? null);
     return json({ ok: true });
   }
   renameVersion(params.id, payload.name);

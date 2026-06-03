@@ -24,6 +24,7 @@ import {
   calculateWeeklyTotals,
   clampMinute,
   DAY_NAMES,
+  dayLabel,
   findOverlaps,
   isoDate,
   SNAP_MINUTES,
@@ -52,6 +53,7 @@ type BoundsRow = {
 type TemplateRow = {
   id: string;
   name: string;
+  week_start_date: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -98,6 +100,7 @@ const MIGRATIONS = [
   "0004_drop_legacy",
   "0005_todos",
   "0006_subcategories",
+  "0007_template_week_start",
 ] as const;
 
 type SqliteDatabase = InstanceType<typeof DatabaseSync>;
@@ -444,6 +447,7 @@ function templateSummaries(db: SqliteDatabase): ScheduleVersion[] {
       `SELECT
         templates.id,
         templates.name,
+        templates.week_start_date,
         templates.updated_at,
         COUNT(schedule_items.id) AS item_count,
         COALESCE(SUM(CASE
@@ -461,6 +465,7 @@ function templateSummaries(db: SqliteDatabase): ScheduleVersion[] {
       const typed = row as {
         id: string;
         name: string;
+        week_start_date: string | null;
         updated_at: string;
         item_count: number;
         total_minutes: number;
@@ -468,6 +473,7 @@ function templateSummaries(db: SqliteDatabase): ScheduleVersion[] {
       return {
         id: typed.id,
         name: typed.name,
+        weekStartDate: typed.week_start_date,
         isActive: typed.id === activeId,
         isDefault: typed.id === defaultId,
         itemCount: typed.item_count,
@@ -511,7 +517,9 @@ export function createTodo(input: TodoInput): Todo {
   const db = getDb();
   const id = randomUUID();
   const maxSort = (
-    db.prepare("SELECT COALESCE(MAX(sort_order), 0) AS max FROM todos").get() as {
+    db
+      .prepare("SELECT COALESCE(MAX(sort_order), 0) AS max FROM todos")
+      .get() as {
       max: number;
     }
   ).max;
@@ -552,16 +560,16 @@ export function updateTodo(id: string, patch: Partial<TodoInput>): Todo | null {
     values.push(patch.durationMinutes);
   }
   if (sets.length === 0) {
-    const row = db
-      .prepare("SELECT * FROM todos WHERE id = ?")
-      .get(id) as TodoRow | undefined;
+    const row = db.prepare("SELECT * FROM todos WHERE id = ?").get(id) as
+      | TodoRow
+      | undefined;
     return row ? rowToTodo(row) : null;
   }
   values.push(id);
   db.prepare(`UPDATE todos SET ${sets.join(", ")} WHERE id = ?`).run(...values);
-  const row = db
-    .prepare("SELECT * FROM todos WHERE id = ?")
-    .get(id) as TodoRow | undefined;
+  const row = db.prepare("SELECT * FROM todos WHERE id = ?").get(id) as
+    | TodoRow
+    | undefined;
   return row ? rowToTodo(row) : null;
 }
 
@@ -625,23 +633,20 @@ export function getWeekView(dateParam?: string): WeekView {
       )
       .all(template.id) as ItemRow[]
   ).map(rowToItem);
-  const start = weekStartFor(
-    dateParam
-      ? new Date(`${dateParam}T00:00:00`)
-      : new Date("2026-04-27T00:00:00"),
-  );
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
+  const anchoredDate = dateParam ?? template.week_start_date;
+  const start = anchoredDate
+    ? weekStartFor(new Date(`${anchoredDate}T00:00:00`))
+    : null;
+  const end = start ? new Date(start) : null;
+  if (start && end) end.setDate(start.getDate() + 6);
 
   const days = ([1, 2, 3, 4, 5, 6, 7] as Weekday[]).map((weekday) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + weekday - 1);
     const bound = bounds.get(weekday);
     if (!bound) throw new Error(`Missing day bounds for weekday ${weekday}`);
     const dayItems = items.filter((item) => item.weekday === weekday);
     return {
       weekday,
-      dateLabel: `${DAY_NAMES[weekday - 1]} ${date.getMonth() + 1}/${date.getDate()}`,
+      dateLabel: dayLabel(weekday, start ? isoDate(start) : null),
       dayName: DAY_NAMES[weekday - 1],
       bounds: {
         weekday,
@@ -665,8 +670,8 @@ export function getWeekView(dateParam?: string): WeekView {
     templateId: template.id,
     templateName: template.name,
     defaultTemplateId: defaultId,
-    weekStart: isoDate(start),
-    weekEnd: isoDate(end),
+    weekStart: start ? isoDate(start) : null,
+    weekEnd: end ? isoDate(end) : null,
     versions: templateSummaries(db),
     days,
     categories,
@@ -679,7 +684,9 @@ export function getWeekView(dateParam?: string): WeekView {
   };
 }
 
-function categoryUsageMap(db: ReturnType<typeof getDb>): Record<string, number> {
+function categoryUsageMap(
+  db: ReturnType<typeof getDb>,
+): Record<string, number> {
   const usage: Record<string, number> = {};
   const itemRows = db
     .prepare(
@@ -718,7 +725,9 @@ export function upsertItem(input: ItemInput): ScheduleItem {
     : undefined;
   const templateId = existing?.template_id ?? activeTemplateId(db);
   const seriesId =
-    input.seriesId !== undefined ? input.seriesId : (existing?.series_id ?? null);
+    input.seriesId !== undefined
+      ? input.seriesId
+      : (existing?.series_id ?? null);
   const snappedStart = snapMinute(input.startMinute);
   const startMinute =
     input.kind === "block"
@@ -1050,7 +1059,9 @@ export class CategoryInUseError extends Error {
 export function deleteCategory(id: string) {
   const db = getDb();
   const items = db
-    .prepare("SELECT COUNT(*) AS count FROM schedule_items WHERE category_id = ?")
+    .prepare(
+      "SELECT COUNT(*) AS count FROM schedule_items WHERE category_id = ?",
+    )
     .get(id) as { count: number };
   const todos = db
     .prepare("SELECT COUNT(*) AS count FROM todos WHERE category_id = ?")
@@ -1077,6 +1088,14 @@ export function updateDayBounds(input: DayBounds) {
   );
 }
 
+export function updateAllDayBounds(wakeMinute: number, sleepMinute: number) {
+  const db = getDb();
+  db.prepare(
+    `UPDATE day_bounds SET wake_minute = ?, sleep_minute = ?
+       WHERE template_id = ?`,
+  ).run(wakeMinute, sleepMinute, activeTemplateId(db));
+}
+
 export function createVersion(input: VersionInput): ScheduleVersion {
   const db = getDb();
   const sourceId = input.sourceTemplateId ?? activeTemplateId(db);
@@ -1090,8 +1109,8 @@ export function createVersion(input: VersionInput): ScheduleVersion {
   db.exec("BEGIN");
   try {
     db.prepare(
-      "INSERT INTO templates (id, name, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-    ).run(id, name);
+      "INSERT INTO templates (id, name, week_start_date, created_at, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    ).run(id, name, source.week_start_date);
     const bounds = db
       .prepare("SELECT * FROM day_bounds WHERE template_id = ?")
       .all(sourceId) as BoundsRow[];
@@ -1164,6 +1183,19 @@ export function renameVersion(id: string, name: string) {
   db.prepare(
     "UPDATE templates SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
   ).run(name.trim() || "Untitled schedule", id);
+}
+
+export function updateVersionWeekStart(
+  id: string,
+  weekStartDate: string | null,
+) {
+  const db = getDb();
+  const normalized = weekStartDate
+    ? isoDate(weekStartFor(new Date(`${weekStartDate}T00:00:00`)))
+    : null;
+  db.prepare(
+    "UPDATE templates SET week_start_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+  ).run(normalized, id);
 }
 
 export function deleteVersion(id: string) {

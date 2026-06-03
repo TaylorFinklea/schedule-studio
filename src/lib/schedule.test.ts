@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   calculateCategoryBudgets,
   calculateWeeklyTotals,
+  dayLabel,
   findOverlaps,
   formatDuration,
   formatTime,
   orderedVisibleCategories,
   parseTimeInput,
+  weekRangeLabel,
   snapMinute,
 } from "$lib/schedule";
 import type { Category, ScheduleItem } from "$lib/types";
@@ -76,6 +78,16 @@ describe("schedule helpers", () => {
     expect(parseTimeInput("12:00 PM")).toBe(720);
     expect(parseTimeInput("23:55")).toBe(1435);
     expect(parseTimeInput("25:00")).toBeNull();
+  });
+
+  it("labels dated and date-less schedule days", () => {
+    expect(dayLabel(1, "2026-06-01")).toBe("Mon 6/1");
+    expect(dayLabel(1, null)).toBe("Mon");
+  });
+
+  it("formats week ranges only for dated schedules", () => {
+    expect(weekRangeLabel("2026-06-01", "2026-06-07")).toBe("Jun 1 - Jun 7");
+    expect(weekRangeLabel(null, null)).toBe("Weekly template");
   });
 
   it("totals blocks and pins (pins count as their stored duration)", () => {

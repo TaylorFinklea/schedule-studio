@@ -10,10 +10,13 @@
   import {
     formatDuration,
     formatTime,
+    isoDate,
     orderedVisibleCategories,
     parseTimeInput,
     SNAP_MINUTES,
     snapMinute,
+    weekRangeLabel,
+    weekStartFor,
   } from "$lib/schedule";
   import { APP_THEMES, DEFAULT_THEME_ID, themeById } from "$lib/themes";
   import type {
@@ -81,6 +84,11 @@
     sleepText: string;
     error: string;
   } | null>(null);
+  let scheduleBoundsEditor = $state({
+    wakeText: "",
+    sleepText: "",
+    error: "",
+  });
   let categoryDeleteError = $state("");
   let themeId = $state(DEFAULT_THEME_ID);
   let dragging = $state<{
@@ -129,6 +137,23 @@
         !incomingItems.some((item: ScheduleItem) => item.id === selectedId)
       )
         selectedId = null;
+      scheduleBoundsEditor = {
+        wakeText: formatTime(
+          Math.min(
+            ...incoming.days.map(
+              (day: WeekView["days"][number]) => day.bounds.wakeMinute,
+            ),
+          ),
+        ),
+        sleepText: formatTime(
+          Math.max(
+            ...incoming.days.map(
+              (day: WeekView["days"][number]) => day.bounds.sleepMinute,
+            ),
+          ),
+        ),
+        error: "",
+      };
     });
   });
 
@@ -780,6 +805,65 @@
     await invalidateAll();
   }
 
+  async function saveScheduleBounds() {
+    const wake = parseTimeInput(scheduleBoundsEditor.wakeText);
+    const sleep = parseTimeInput(scheduleBoundsEditor.sleepText);
+    if (wake === null) {
+      scheduleBoundsEditor.error = "Use a start time like 5:30 AM.";
+      return;
+    }
+    if (sleep === null) {
+      scheduleBoundsEditor.error = "Use an end time like 10:00 PM.";
+      return;
+    }
+    if (sleep <= wake) {
+      scheduleBoundsEditor.error = "End must be after start.";
+      return;
+    }
+    await fetch(apiPath("/api/day-bounds/all"), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wakeMinute: wake, sleepMinute: sleep }),
+    });
+    scheduleBoundsEditor.error = "";
+    await invalidateAll();
+  }
+
+  function normalizedWeekStart(value: string): string | null {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    return isoDate(weekStartFor(new Date(`${value}T00:00:00`)));
+  }
+
+  async function updateWeekStartDate(value: string | null) {
+    await fetch(apiPath(`/api/versions/${week.templateId}`), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ weekStartDate: value }),
+    });
+    await invalidateAll();
+  }
+
+  async function handleDatedToggle(checked: boolean) {
+    if (!checked) {
+      await updateWeekStartDate(null);
+      return;
+    }
+    await updateWeekStartDate(week.weekStart ?? isoDate(weekStartFor()));
+  }
+
+  async function handleWeekInput(value: string) {
+    const normalized = normalizedWeekStart(value);
+    if (!normalized) return;
+    await updateWeekStartDate(normalized);
+  }
+
+  async function shiftWeek(days: number) {
+    const current = week.weekStart ?? isoDate(weekStartFor());
+    const date = new Date(`${current}T00:00:00`);
+    date.setDate(date.getDate() + days);
+    await updateWeekStartDate(isoDate(date));
+  }
+
   function zoomPercent() {
     return Math.round((hourHeight / DEFAULT_HOUR_HEIGHT) * 100);
   }
@@ -1124,12 +1208,6 @@
   function horizontalHoverStyle(minute: number) {
     return `left:${((minute - maxStart) / 60) * hourHeight}px;`;
   }
-
-  function dateRangeLabel() {
-    const start = new Date(`${week.weekStart}T00:00:00`);
-    const end = new Date(`${week.weekEnd}T00:00:00`);
-    return `${start.toLocaleDateString(undefined, { month: "short", day: "numeric" })} - ${end.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-  }
 </script>
 
 <div
@@ -1137,13 +1215,15 @@
 >
   <AppShell
     versionLabel={week.templateName}
-    weekRangeLabel={dateRangeLabel()}
+    weekRangeLabel={weekRangeLabel(week.weekStart, week.weekEnd)}
     {layoutMode}
     {hourHeight}
     defaultZoom={DEFAULT_HOUR_HEIGHT}
     zoomStep={ZOOM_STEP}
     onLayoutChange={setLayoutMode}
     onZoomChange={setZoom}
+    onPrevWeek={() => shiftWeek(-7)}
+    onNextWeek={() => shiftWeek(7)}
     onAdd={() => openCreate("block")}
     onMenu={openSettings}
     onVersionMenu={() => (versionMenuOpen = !versionMenuOpen)}
@@ -1179,7 +1259,12 @@
               data-testid={`day-header-${day.weekday}`}
               on:click={(event) => openDayBoundsEditor(day.weekday, event)}
             >
-              <div class="text-[14px] font-semibold">{day.dateLabel}</div>
+              <div
+                class="text-[14px] font-semibold"
+                data-testid={`day-label-${day.weekday}`}
+              >
+                {day.dateLabel}
+              </div>
               <div class="text-muted-foreground mt-0.5 flex gap-4 text-[10px]">
                 <span
                   >Wake {formatTime(day.bounds.wakeMinute).replace(
@@ -1199,7 +1284,10 @@
         </div>
       {/if}
 
-      <div class="relative min-h-0 flex-1 overflow-auto">
+      <div
+        class="relative min-h-0 flex-1 overflow-auto"
+        data-testid="timeline-scroll"
+      >
         {#if layoutMode === "vertical"}
           <div
             class="relative grid min-h-[980px]"
@@ -1387,7 +1475,7 @@
               class="border-border bg-surface/80 sticky top-0 z-30 h-11 border-b"
             >
               <div
-                class="text-muted-foreground absolute top-0 bottom-0 left-0 flex items-center px-4 text-[12px]"
+                class="text-muted-foreground bg-surface sticky top-0 bottom-0 left-0 z-40 flex h-full items-center px-4 text-[12px]"
                 style="width:{HORIZONTAL_LABEL_WIDTH}px;"
               >
                 All times
@@ -1413,15 +1501,22 @@
                 style="height:{HORIZONTAL_ROW_HEIGHT}px;"
               >
                 <button
-                  class="bg-surface-2/70 border-border absolute top-0 bottom-0 left-0 z-20 border-r px-3 text-left"
+                  class="bg-surface-2/95 border-border sticky top-0 bottom-0 left-0 z-20 h-full border-r px-3 text-left"
                   style="width:{HORIZONTAL_LABEL_WIDTH}px;"
                   data-testid={`day-header-${day.weekday}`}
                   on:click={(event) => openDayBoundsEditor(day.weekday, event)}
                 >
-                  <div class="text-[13px] font-semibold">{day.dateLabel}</div>
-                  <div class="text-muted-foreground mt-1 text-[10px]">
-                    {day.dayName}
+                  <div
+                    class="text-[13px] font-semibold"
+                    data-testid={`day-label-${day.weekday}`}
+                  >
+                    {day.dateLabel}
                   </div>
+                  {#if day.dateLabel !== day.dayName}
+                    <div class="text-muted-foreground mt-1 text-[10px]">
+                      {day.dayName}
+                    </div>
+                  {/if}
                 </button>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1460,10 +1555,10 @@
                       data-testid="schedule-item"
                       data-series-id={item.seriesId ?? ""}
                       class="focus:ring-ring absolute z-10 overflow-hidden rounded-[5px] text-left transition-shadow focus:outline-none {isSelected
-                        ? 'ring-1 ring-[#7aa2f7]/70 shadow-md shadow-black/30'
+                        ? 'shadow-md ring-1 shadow-black/30 ring-[#7aa2f7]/70'
                         : 'hover:bg-white/[0.02]'} {item.kind === 'pin'
                         ? 'top-1 z-20 flex h-5 items-center gap-1.5 px-1.5'
-                        : 'top-8 bottom-2 pl-2.5 pr-2 border-l-2'}"
+                        : 'top-8 bottom-2 border-l-2 pr-2 pl-2.5'}"
                       style="{horizontalItemStyle(item)} {item.kind === 'pin'
                         ? `background:${category.color}1a; border:1px solid ${category.color}55;`
                         : `border-left-color:${category.color}; background:${category.color}14;`}"
@@ -1655,7 +1750,7 @@
                 <button
                   type="button"
                   class="border-border h-7 flex-1 rounded-md border text-[11px] font-medium tabular-nums transition-colors {active
-                    ? 'border-[#7aa2f7]/60 bg-[#7aa2f7]/15 text-foreground'
+                    ? 'text-foreground border-[#7aa2f7]/60 bg-[#7aa2f7]/15'
                     : 'bg-muted/20 text-muted-foreground hover:bg-muted/40'}"
                   aria-pressed={active}
                   aria-label={`Toggle ${["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][wd - 1]}`}
@@ -1871,6 +1966,84 @@
           </button>
         </div>
         <div class="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+          <section>
+            <div
+              class="text-muted-foreground mb-2 text-[10px] font-semibold tracking-[0.12em] uppercase"
+            >
+              Schedule
+            </div>
+            <div class="border-border bg-muted/10 rounded-md border p-3">
+              <label class="flex items-center gap-2 text-[12px]">
+                <input
+                  type="checkbox"
+                  class="accent-[#7aa2f7]"
+                  data-testid="schedule-dated-toggle"
+                  checked={week.weekStart !== null}
+                  on:change={(event) =>
+                    handleDatedToggle(event.currentTarget.checked)}
+                />
+                Show calendar dates
+              </label>
+              <label class="mt-3 block">
+                <span class="text-muted-foreground mb-1 block text-[11px]"
+                  >Week</span
+                >
+                <input
+                  type="date"
+                  aria-label="Week date"
+                  data-testid="week-start-input"
+                  class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7] disabled:opacity-50"
+                  value={week.weekStart ?? ""}
+                  disabled={week.weekStart === null}
+                  on:input={(event) =>
+                    handleWeekInput(event.currentTarget.value)}
+                />
+              </label>
+
+              <div class="mt-4 grid grid-cols-2 gap-2">
+                <label class="block">
+                  <span class="text-muted-foreground mb-1 block text-[11px]"
+                    >Start</span
+                  >
+                  <input
+                    aria-label="Visible start time"
+                    data-testid="schedule-start-time"
+                    class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
+                    placeholder="4:00 AM"
+                    bind:value={scheduleBoundsEditor.wakeText}
+                  />
+                </label>
+                <label class="block">
+                  <span class="text-muted-foreground mb-1 block text-[11px]"
+                    >End</span
+                  >
+                  <input
+                    aria-label="Visible end time"
+                    data-testid="schedule-end-time"
+                    class="border-border bg-muted/30 w-full rounded-md border px-2 py-1.5 text-[12px] outline-none focus:border-[#7aa2f7]"
+                    placeholder="10:00 PM"
+                    bind:value={scheduleBoundsEditor.sleepText}
+                  />
+                </label>
+              </div>
+              {#if scheduleBoundsEditor.error}
+                <div
+                  class="mt-3 rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-200"
+                >
+                  {scheduleBoundsEditor.error}
+                </div>
+              {/if}
+              <div class="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  class="rounded-md bg-[#7aa2f7] px-3 py-1.5 text-[12px] font-semibold text-[#101014] hover:bg-[#9eceff]"
+                  data-testid="save-schedule-bounds"
+                  on:click={saveScheduleBounds}>Apply to all days</button
+                >
+              </div>
+            </div>
+          </section>
+
           <section>
             <div
               class="text-muted-foreground mb-2 text-[10px] font-semibold tracking-[0.12em] uppercase"

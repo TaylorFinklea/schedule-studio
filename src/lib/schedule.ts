@@ -198,3 +198,27 @@ export function weekStartFor(date = new Date()): Date {
 export function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
+
+export function dayLabel(weekday: Weekday, weekStart: string | null): string {
+  const name = DAY_NAMES[weekday - 1];
+  if (!weekStart) return name;
+  const date = new Date(`${weekStart}T00:00:00`);
+  date.setDate(date.getDate() + weekday - 1);
+  return `${name} ${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+export function weekRangeLabel(
+  weekStart: string | null,
+  weekEnd: string | null,
+): string {
+  if (!weekStart || !weekEnd) return "Weekly template";
+  const start = new Date(`${weekStart}T00:00:00`);
+  const end = new Date(`${weekEnd}T00:00:00`);
+  return `${start.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  })} - ${end.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  })}`;
+}

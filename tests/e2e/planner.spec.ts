@@ -54,6 +54,63 @@ test("the layout toggle switches between rows and columns", async ({
   );
 });
 
+test("the schedule week picker anchors dates and can switch to weekday-only", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+
+  await page.getByTestId("settings-button").click();
+  await page.getByTestId("schedule-dated-toggle").check();
+  await page.getByTestId("week-start-input").fill("2026-06-03");
+  await expect(page.getByTestId("day-label-1")).toHaveText("Mon 6/1");
+  await expect(page.getByText("Jun 1 - Jun 7")).toBeVisible();
+
+  await page.getByTestId("schedule-dated-toggle").uncheck();
+  await expect(page.getByTestId("day-label-1")).toHaveText("Mon");
+  await expect(page.getByText("Weekly template")).toBeVisible();
+});
+
+test("rows view keeps day labels pinned while scrolling the timeline", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await page.getByTestId("layout-horizontal").click();
+
+  const before = await page.getByTestId("day-header-1").boundingBox();
+  await page
+    .getByTestId("timeline-scroll")
+    .evaluate((element) => (element.scrollLeft = 320));
+  const after = await page.getByTestId("day-header-1").boundingBox();
+
+  expect(before).not.toBeNull();
+  expect(after).not.toBeNull();
+  expect(Math.abs((after?.x ?? 0) - (before?.x ?? 0))).toBeLessThan(2);
+});
+
+test("schedule settings apply visible time caps to every day", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await page.getByTestId("settings-button").click();
+  await page.getByTestId("schedule-start-time").fill("3:00 AM");
+  await page.getByTestId("schedule-end-time").fill("11:00 PM");
+  await page.getByTestId("save-schedule-bounds").click();
+  await page.getByRole("button", { name: "Close" }).click();
+  await page.getByTestId("layout-vertical").click();
+
+  for (const weekday of [1, 2, 3, 4, 5, 6, 7]) {
+    await expect(page.getByTestId(`day-header-${weekday}`)).toContainText(
+      "Wake 3 AM",
+    );
+    await expect(page.getByTestId(`day-header-${weekday}`)).toContainText(
+      "Sleep 11 PM",
+    );
+  }
+});
+
 test("the version menu lists schedule versions", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
@@ -96,9 +153,7 @@ test("set default promotes a sandbox and allows deleting the old default", async
   ).toBeVisible();
 
   // Restore original default so other tests aren't affected
-  await oldDefault
-    .locator('[data-testid^="version-set-default-"]')
-    .click();
+  await oldDefault.locator('[data-testid^="version-set-default-"]').click();
   await page.waitForLoadState("networkidle");
 
   // Delete the sandbox we created (menu is still open)
@@ -153,9 +208,7 @@ test("creating a multi-day item creates a series", async ({ page }) => {
   await page.getByLabel("Title").fill(title);
   await page.getByRole("button", { name: /^Create$/ }).click();
   await page.waitForLoadState("networkidle");
-  const items = page
-    .getByTestId("schedule-item")
-    .filter({ hasText: title });
+  const items = page.getByTestId("schedule-item").filter({ hasText: title });
   await expect(items).toHaveCount(3);
 });
 
@@ -250,13 +303,13 @@ test("add a new category", async ({ page }) => {
   await page.getByLabel("New category name").fill(name);
   await page.getByTestId("category-create-submit").click();
   await page.waitForLoadState("networkidle");
-  await expect(
-    page.getByTestId("category-delete-error"),
-  ).toBeHidden();
+  await expect(page.getByTestId("category-delete-error")).toBeHidden();
   // The new category should show up in the editor row list.
   await expect(
     page.locator("input[aria-label='Category name']", { hasText: "" }).filter({
-      has: page.locator(`xpath=ancestor::div[starts-with(@data-testid, 'category-row-')]`),
+      has: page.locator(
+        `xpath=ancestor::div[starts-with(@data-testid, 'category-row-')]`,
+      ),
     }),
   ).not.toHaveCount(0);
   // And in the budget strip.
@@ -294,9 +347,7 @@ test("delete is blocked when a category is in use", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
   await page.getByTestId("settings-button").click();
-  const firstDelete = page
-    .locator('[data-testid^="category-delete-"]')
-    .first();
+  const firstDelete = page.locator('[data-testid^="category-delete-"]').first();
   // Seeded categories are referenced by seed items, so delete must be disabled.
   await expect(firstDelete).toBeDisabled();
 });

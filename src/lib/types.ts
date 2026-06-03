@@ -69,6 +69,7 @@ export type DailyTotal = {
 export type ScheduleVersion = {
   id: string;
   name: string;
+  weekStartDate: string | null;
   isActive: boolean;
   isDefault: boolean;
   itemCount: number;
@@ -97,8 +98,8 @@ export type WeekView = {
   templateId: string;
   templateName: string;
   defaultTemplateId: string;
-  weekStart: string;
-  weekEnd: string;
+  weekStart: string | null;
+  weekEnd: string | null;
   versions: ScheduleVersion[];
   days: {
     weekday: Weekday;

@@ -26,3 +26,8 @@
 
 - Package Schedule Studio as a Home Assistant add-on through Supervisor using Ingress on internal port `3000`; keep the port unpublished by default and persist SQLite at `/data/schedule-studio.sqlite`.
 - Publish a multi-arch GHCR image from the root Dockerfile and reference it from `home-assistant/schedule-studio/config.yaml`.
+
+## 2026-06-03
+
+- Store a schedule version's optional calendar anchor on `templates.week_start_date`. `NULL` means the template is date-less and renders weekday-only labels; non-null values are normalized to the Monday of that week and drive displayed dates, header range, date picker, and prev/next week controls.
+- Keep visible time caps in existing `day_bounds` rows. The settings control applies a chosen start/end to all seven rows for the active template; per-day header editing remains available for exceptions.
