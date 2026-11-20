@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "schedule_studio",
+  "project_id": "19b6231b-0719-4670-a71c-3d34005e08d8"
+}

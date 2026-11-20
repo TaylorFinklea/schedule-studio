@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 test("renders the calm shell with budget strip", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("button", { name: /Add$/ })).toBeVisible();
+  await expect(
+    page.getByRole("banner").getByRole("button", { name: /Add$/ }),
+  ).toBeVisible();
   await expect(page.getByLabel("Weekly budget summary")).toBeVisible();
   await expect(page.getByTestId("layout-horizontal")).toHaveAttribute(
     "aria-pressed",
@@ -14,11 +16,11 @@ test("renders the calm shell with budget strip", async ({ page }) => {
 test("the Add button opens the editor modal", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await page.getByRole("button", { name: /^Add$/ }).click();
+  await page.getByRole("banner").getByRole("button", { name: /^Add$/ }).click();
   await expect(
     page.locator('section[aria-label="Add schedule item"]'),
   ).toBeVisible();
-  await expect(page.getByLabel("Title")).toBeVisible();
+  await expect(page.getByLabel("Title", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Start time")).toBeVisible();
 });
 
@@ -34,7 +36,9 @@ test("clicking a schedule item opens the editor populated with its data", async 
     .click();
   const editor = page.locator('section[aria-label="Add schedule item"]');
   await expect(editor).toBeVisible();
-  await expect(editor.getByLabel("Title")).toHaveValue(/exercise/i);
+  await expect(editor.getByLabel("Title", { exact: true })).toHaveValue(
+    /exercise/i,
+  );
 });
 
 test("the layout toggle switches between rows and columns", async ({
@@ -200,12 +204,12 @@ test("seeded duplicates render with a series marker", async ({ page }) => {
 test("creating a multi-day item creates a series", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await page.getByRole("button", { name: /^Add$/ }).click();
+  await page.getByRole("banner").getByRole("button", { name: /^Add$/ }).click();
   // Day 1 (Mon) is pre-selected from the visibleDay default — add Wed + Fri.
   await page.getByTestId("day-chip-3").click();
   await page.getByTestId("day-chip-5").click();
   const title = `E2E series ${Date.now()}`;
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByRole("button", { name: /^Create$/ }).click();
   await page.waitForLoadState("networkidle");
   const items = page.getByTestId("schedule-item").filter({ hasText: title });
@@ -215,11 +219,11 @@ test("creating a multi-day item creates a series", async ({ page }) => {
 test("editing a series-member updates every instance", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await page.getByRole("button", { name: /^Add$/ }).click();
+  await page.getByRole("banner").getByRole("button", { name: /^Add$/ }).click();
   await page.getByTestId("day-chip-3").click();
   await page.getByTestId("day-chip-5").click();
   const title = `E2E edit ${Date.now()}`;
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByRole("button", { name: /^Create$/ }).click();
   await page.waitForLoadState("networkidle");
 
@@ -231,7 +235,7 @@ test("editing a series-member updates every instance", async ({ page }) => {
   const editor = page.locator('section[aria-label="Add schedule item"]');
   await expect(editor).toBeVisible();
   const renamed = `${title} renamed`;
-  await editor.getByLabel("Title").fill(renamed);
+  await editor.getByLabel("Title", { exact: true }).fill(renamed);
   await editor.getByRole("button", { name: /^Save$/ }).click();
   await page.waitForLoadState("networkidle");
 
@@ -243,11 +247,11 @@ test("editing a series-member updates every instance", async ({ page }) => {
 test("detach removes one instance from a series", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await page.getByRole("button", { name: /^Add$/ }).click();
+  await page.getByRole("banner").getByRole("button", { name: /^Add$/ }).click();
   await page.getByTestId("day-chip-3").click();
   await page.getByTestId("day-chip-5").click();
   const title = `E2E detach ${Date.now()}`;
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByRole("button", { name: /^Create$/ }).click();
   await page.waitForLoadState("networkidle");
 
@@ -265,7 +269,7 @@ test("detach removes one instance from a series", async ({ page }) => {
   // Detach button should be hidden.
   await expect(editor.getByTestId("detach-series")).toBeHidden();
   const renamed = `${title} solo`;
-  await editor.getByLabel("Title").fill(renamed);
+  await editor.getByLabel("Title", { exact: true }).fill(renamed);
   await editor.getByRole("button", { name: /^Save$/ }).click();
   await page.waitForLoadState("networkidle");
 
@@ -446,9 +450,9 @@ test("dragging a block onto another day moves it", async ({ page }) => {
   await page.waitForLoadState("networkidle");
   // Create a fresh single-day block we own, in an empty time slot, so the
   // pointerdown lands cleanly on it instead of an overlapping seed block.
-  await page.getByRole("button", { name: /^Add$/ }).click();
+  await page.getByRole("banner").getByRole("button", { name: /^Add$/ }).click();
   const title = `Move me ${Date.now()}`;
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Start time").fill("4:30 AM");
   await page.getByLabel("End time").fill("5:30 AM");
   await page.getByRole("button", { name: /^Create$/ }).click();
@@ -484,9 +488,9 @@ test("delete series wipes every instance and surfaces a toast", async ({
 }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await page.getByRole("button", { name: /^Add$/ }).click();
+  await page.getByRole("banner").getByRole("button", { name: /^Add$/ }).click();
   const title = `Doomed ${Date.now()}`;
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByTestId("day-chip-2").click();
   await page.getByTestId("day-chip-3").click();
   await page.getByRole("button", { name: /^Create$/ }).click();

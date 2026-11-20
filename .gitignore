@@ -1,5 +1,7 @@
 node_modules
 .svelte-kit
+.wrangler
+worker-configuration.d.ts
 build
 .vite
 coverage
@@ -17,3 +19,15 @@ playwright-report
 .superpowers
 .playwright-mcp/
 phase*.png
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
+.beads/proxieddb/
+.beads.gate.lock
+
+# Claude Code runtime locks
+.claude/*.lock
+
+# Private Cloudflare deploy config (see wrangler.jsonc for the template)
+wrangler.production.jsonc

@@ -1,0 +1,3 @@
+# Project-local embedded Dolt store; synchronization stays disabled.
+dolt:
+  local-only: true

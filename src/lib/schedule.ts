@@ -93,6 +93,66 @@ export function calculateDailyTotals(items: ScheduleItem[]): DailyTotal[] {
   }));
 }
 
+export type DailyCategoryTotal = {
+  categoryId: string;
+  parentId: string | null;
+  /** Scheduled minutes assigned directly to this category on one weekday. */
+  actualMinutes: number;
+  /** A parent includes its direct minutes and those of its subcategories. */
+  rolledUpActualMinutes: number;
+};
+
+export function calculateDailyCategoryTotals(
+  items: ScheduleItem[],
+  categories: Category[],
+  weekday: Weekday,
+): DailyCategoryTotal[] {
+  const actualFor = (categoryId: string) =>
+    items
+      .filter(
+        (item) => item.weekday === weekday && item.categoryId === categoryId,
+      )
+      .reduce((sum, item) => sum + itemDuration(item), 0);
+
+  const bySort = (a: Category, b: Category) => a.sortOrder - b.sortOrder;
+  const ordered: Category[] = [];
+  const parents = categories
+    .filter((category) => category.parentId === null)
+    .sort(bySort);
+  for (const parent of parents) {
+    ordered.push(parent);
+    ordered.push(
+      ...categories
+        .filter((category) => category.parentId === parent.id)
+        .sort(bySort),
+    );
+  }
+  // Keep any orphaned categories visible in case old data references a parent
+  // that has since been removed or repaired.
+  ordered.push(
+    ...categories.filter(
+      (category) => !ordered.some((entry) => entry.id === category.id),
+    ),
+  );
+
+  return ordered.map((category) => {
+    const actualMinutes = actualFor(category.id);
+    const rolledUpActualMinutes =
+      category.parentId === null
+        ? actualMinutes +
+          categories
+            .filter((child) => child.parentId === category.id)
+            .reduce((sum, child) => sum + actualFor(child.id), 0)
+        : actualMinutes;
+    return {
+      categoryId: category.id,
+      parentId: category.parentId,
+      actualMinutes,
+      rolledUpActualMinutes,
+    };
+  });
+}
+
 export function calculateCategoryBudgets(
   weeklyTotals: CategoryTotal[],
   categories: Category[],

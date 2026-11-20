@@ -19,6 +19,30 @@
       .filter((budget): budget is CategoryBudget => budget !== undefined),
   );
 
+  const budgetGroups = $derived(
+    categories
+      .filter((category) => category.parentId === null && !category.archived)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((parent) => ({
+        parent: budgets.find((budget) => budget.categoryId === parent.id),
+        children: categories
+          .filter(
+            (category) => category.parentId === parent.id && !category.archived,
+          )
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((child) =>
+            budgets.find((budget) => budget.categoryId === child.id),
+          )
+          .filter((budget): budget is CategoryBudget => budget !== undefined),
+      }))
+      .filter(
+        (
+          group,
+        ): group is { parent: CategoryBudget; children: CategoryBudget[] } =>
+          group.parent !== undefined,
+      ),
+  );
+
   function categoryFor(id: string): Category | undefined {
     return categories.find((category) => category.id === id);
   }
@@ -64,55 +88,70 @@
   });
 </script>
 
-<div
-  class="border-border bg-surface/60 flex h-12 shrink-0 items-center gap-2 overflow-x-auto border-b px-4 text-[12px]"
-  aria-label="Weekly budget summary"
->
-  {#each visibleBudgets as budget (budget.categoryId)}
-    {@const category = categoryFor(budget.categoryId)}
-    {#if category}
-      {@const tone = deltaTone(budget)}
-      {@const isChild = budget.parentId !== null}
+{#snippet budgetPill(budget: CategoryBudget, isChild: boolean)}
+  {@const category = categoryFor(budget.categoryId)}
+  {#if category}
+    {@const tone = deltaTone(budget)}
+    <span
+      class="border-border bg-surface-2/60 hover:bg-surface-2 flex flex-none items-center gap-2 rounded-full border px-3 py-1 transition-colors {isChild
+        ? 'ml-4 opacity-80'
+        : ''}"
+      title="{category.name}: {formatDuration(
+        displayActual(budget),
+      )}{budget.targetMinutes !== null
+        ? ` of ${formatDuration(budget.targetMinutes)} ${budget.mode}`
+        : ' (observed)'}"
+      data-testid="budget-pill-{budget.categoryId}"
+    >
+      {#if isChild}
+        <span class="text-muted-foreground/60 -mr-1 -ml-2" aria-hidden="true"
+          >└</span
+        >
+      {/if}
       <span
-        class="border-border bg-surface-2/60 hover:bg-surface-2 flex flex-none items-center gap-2 rounded-full border px-3 py-1 transition-colors {isChild
-          ? 'opacity-80'
-          : ''}"
-        title="{category.name}: {formatDuration(
+        class="block h-1.5 w-1.5 rounded-full"
+        style="background-color: {category.color};"
+        aria-hidden="true"
+      ></span>
+      <span class="text-foreground font-medium">{category.name}</span>
+      <span class="text-muted-foreground tabular-nums">
+        {formatDuration(
           displayActual(budget),
-        )}{budget.targetMinutes !== null
-          ? ` of ${formatDuration(budget.targetMinutes)} ${budget.mode}`
-          : ' (observed)'}"
-        data-testid="budget-pill-{budget.categoryId}"
-      >
-        {#if isChild}
-          <span class="text-muted-foreground/60 -mr-1" aria-hidden="true">└</span>
-        {/if}
-        <span
-          class="block h-1.5 w-1.5 rounded-full"
-          style="background-color: {category.color};"
-          aria-hidden="true"
-        ></span>
-        <span class="text-foreground font-medium">{category.name}</span>
-        <span class="text-muted-foreground tabular-nums">
-          {formatDuration(displayActual(budget))}{#if budget.targetMinutes !== null}
-            <span class="text-muted-foreground/60">
-              / {formatDuration(budget.targetMinutes)}</span
-            >
-          {/if}
-        </span>
-        {#if budget.mode !== "observation" && budget.deltaMinutes !== null}
-          <span
-            class="tabular-nums {tone === 'ok'
-              ? 'text-[#9ece6a]'
-              : tone === 'warn'
-                ? 'text-[#e0af68]'
-                : 'text-[#f7768e]'}"
+        )}{#if budget.targetMinutes !== null}
+          <span class="text-muted-foreground/60">
+            / {formatDuration(budget.targetMinutes)}</span
           >
-            {deltaText(budget)}
-          </span>
         {/if}
       </span>
-    {/if}
+      {#if budget.mode !== "observation" && budget.deltaMinutes !== null}
+        <span
+          class="tabular-nums {tone === 'ok'
+            ? 'text-[#9ece6a]'
+            : tone === 'warn'
+              ? 'text-[#e0af68]'
+              : 'text-[#f7768e]'}"
+        >
+          {deltaText(budget)}
+        </span>
+      {/if}
+    </span>
+  {/if}
+{/snippet}
+
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div
+  class="border-border bg-surface/60 flex max-h-40 min-h-12 shrink-0 items-start gap-4 overflow-auto border-b px-4 py-2 text-[12px]"
+  aria-label="Weekly budget summary"
+  role="region"
+  tabindex="0"
+>
+  {#each budgetGroups as group (group.parent.categoryId)}
+    <div class="flex flex-none flex-col items-start gap-1.5">
+      {@render budgetPill(group.parent, false)}
+      {#each group.children as child (child.categoryId)}
+        {@render budgetPill(child, true)}
+      {/each}
+    </div>
   {/each}
 
   {#if totals.targeted > 0}

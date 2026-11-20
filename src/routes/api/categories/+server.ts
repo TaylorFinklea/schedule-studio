@@ -23,7 +23,7 @@ export async function POST({ request }) {
       ? payload.parentId
       : undefined;
   try {
-    const id = createCategory({
+    const id = await createCategory({
       name: payload.name,
       color: payload.color,
       budgetMode,

@@ -5,6 +5,7 @@ Project-specific guidance for any AI coding agent (Claude Code, Codex, Copilot, 
 ## Live context
 
 Before substantial work, read `.docs/ai/`:
+
 - `current-state.md` — what's built and the current build status
 - `decisions.md` — architectural decisions with dates
 - `roadmap.md` — Now / Next / Later
@@ -27,6 +28,7 @@ pnpm format           # prettier --write
 ```
 
 Single-test runs:
+
 ```sh
 pnpm vitest run src/lib/schedule.test.ts            # one file
 pnpm vitest run -t "snapMinute"                     # by test name
@@ -34,11 +36,13 @@ pnpm test:e2e tests/e2e/planner.spec.ts -g "title"  # one Playwright test
 ```
 
 Reset local DB / first-run seed:
+
 ```sh
 rm -rf .local && pnpm dev
 ```
 
 Override DB location (handy for trying schedules without touching `.local/`):
+
 ```sh
 SCHEDULE_STUDIO_DB=/tmp/schedule.sqlite pnpm dev
 ```
@@ -88,16 +92,3 @@ Local-first SvelteKit app. The whole planner UI is one big `src/routes/+page.sve
 - **Boundary clamping**: `upsertItem` snaps and clamps times so blocks always have at least `SNAP_MINUTES` duration and never extend past 24:00. If you bypass `upsertItem` for a bulk insert, replicate that or items will silently corrupt the grid.
 - **Version delete protection**: the default template (`default_template_id` in `app_settings`) cannot be deleted — `deleteVersion` throws. The active pointer falls back to default on delete.
 - **Docker** (`Dockerfile` + `docker-compose.yml`) listens on port 3000 and persists to the `schedule-studio-data` volume at `/data`. Mount accordingly when running outside Compose.
-
-## Task tracking — beads (`bd`)
-
-This repo's backlog / "what to work on next" is tracked in **beads** (`bd`), a dependency-aware issue tracker — not a markdown TODO. Local stealth install: `.beads/` is git-excluded; nothing is committed.
-
-Agent loop (harness-agnostic — `bd` is just a CLI):
-- `bd ready` — priority-sorted, dependency-aware queue of unblocked work (`--json` for scripting; `bd ready --claim --json` claims the top item atomically).
-- `bd show <id>` — detail before starting.
-- `bd update <id> --claim` — set in_progress + assignee atomically.
-- Run the repo's build/test, then `bd close <id> --reason "…"`.
-- `bd create "Title" -t task -p 2 -d "…"` — file new or mid-task-discovered work; `bd dep add <a> <b>` records `<a>` is blocked-by `<b>`.
-
-beads owns ONLY the backlog/ready-queue. Rationale/ADRs → `.docs/ai/decisions.md`, multi-session design → `.docs/ai/phases/*` (markdown prose; create as the project grows). Part of a cross-repo beads pilot (2026-06-30); see chezmoi-config `.docs/ai/phases/beads-pilot-spec.md`.

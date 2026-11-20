@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateCategoryBudgets,
+  calculateDailyCategoryTotals,
   calculateWeeklyTotals,
   dayLabel,
   findOverlaps,
@@ -236,6 +237,79 @@ describe("schedule helpers", () => {
       "p1",
       "p1-c1",
       "p1-c2",
+    ]);
+  });
+
+  it("calculates saved block and pin durations by day and category", () => {
+    const family = cat("family", null, 1);
+    const meals = cat("meals", "family", 1);
+    const work = cat("work", null, 2);
+    const totals = calculateDailyCategoryTotals(
+      [
+        {
+          ...base,
+          id: "family-block",
+          kind: "block",
+          title: "Family",
+          weekday: 1,
+          startMinute: 540,
+          endMinute: 600,
+          categoryId: "family",
+        },
+        {
+          ...base,
+          id: "meal-block",
+          kind: "block",
+          title: "Dinner",
+          weekday: 1,
+          startMinute: 600,
+          endMinute: 660,
+          categoryId: "meals",
+        },
+        {
+          ...base,
+          id: "pin",
+          kind: "pin",
+          title: "Reminder",
+          weekday: 1,
+          startMinute: 660,
+          endMinute: 662,
+          categoryId: "family",
+        },
+        {
+          ...base,
+          id: "next-day",
+          kind: "block",
+          title: "Next day",
+          weekday: 2,
+          startMinute: 540,
+          endMinute: 720,
+          categoryId: "family",
+        },
+      ],
+      [work, meals, family],
+      1,
+    );
+
+    expect(totals).toEqual([
+      {
+        categoryId: "family",
+        parentId: null,
+        actualMinutes: 62,
+        rolledUpActualMinutes: 122,
+      },
+      {
+        categoryId: "meals",
+        parentId: "family",
+        actualMinutes: 60,
+        rolledUpActualMinutes: 60,
+      },
+      {
+        categoryId: "work",
+        parentId: null,
+        actualMinutes: 0,
+        rolledUpActualMinutes: 0,
+      },
     ]);
   });
 

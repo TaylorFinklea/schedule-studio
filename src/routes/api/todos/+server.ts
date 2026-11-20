@@ -10,7 +10,7 @@ export async function POST({ request }) {
     return json({ error: "kind must be block or pin" }, { status: 400 });
   }
   return json(
-    createTodo({
+    await createTodo({
       title: body.title,
       kind: body.kind,
       categoryId: typeof body.categoryId === "string" ? body.categoryId : null,

@@ -9,6 +9,6 @@ export async function POST({ request }) {
   ) {
     return json({ error: "id + direction required" }, { status: 400 });
   }
-  reorderTodo(body.id, body.direction);
+  await reorderTodo(body.id, body.direction);
   return json({ ok: true });
 }

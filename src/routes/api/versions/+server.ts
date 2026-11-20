@@ -3,5 +3,5 @@ import { createVersion } from "$lib/server/db";
 
 export async function POST({ request }) {
   const payload = await request.json();
-  return json(createVersion(payload));
+  return json(await createVersion(payload));
 }

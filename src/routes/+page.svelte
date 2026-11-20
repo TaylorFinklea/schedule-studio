@@ -5,6 +5,8 @@
   import AppShell from "$lib/components/AppShell.svelte";
   import BudgetStrip from "$lib/components/BudgetStrip.svelte";
   import CategoryEditor from "$lib/components/CategoryEditor.svelte";
+  import DayCategorySummary from "$lib/components/DayCategorySummary.svelte";
+  import DaySummaryButton from "$lib/components/DaySummaryButton.svelte";
   import TodoSidebar from "$lib/components/TodoSidebar.svelte";
   import VersionMenu from "$lib/components/VersionMenu.svelte";
   import {
@@ -72,6 +74,8 @@
   }
   let editorError = $state("");
   let visibleDay = $state<Weekday>(4);
+  let summaryDay = $state<WeekView["days"][number] | null>(null);
+  let summaryTrigger = $state<HTMLButtonElement | null>(null);
   let hourHeight = $state(DEFAULT_HOUR_HEIGHT);
   let layoutMode = $state<"vertical" | "horizontal">("horizontal");
   let settingsOpen = $state(false);
@@ -780,6 +784,12 @@
     };
   }
 
+  function closeDayCategorySummary() {
+    summaryDay = null;
+    summaryTrigger?.focus();
+    summaryTrigger = null;
+  }
+
   async function saveDayBounds() {
     if (!dayBoundsEditor) return;
     const wake = parseTimeInput(dayBoundsEditor.wakeText);
@@ -1210,10 +1220,15 @@
   }
 </script>
 
+<svelte:head>
+  <link rel="icon" type="image/svg+xml" href={`${ingressPath}/favicon.svg`} />
+</svelte:head>
+
 <div
   class="bg-background text-foreground flex h-screen flex-col overflow-hidden"
 >
   <AppShell
+    {ingressPath}
     versionLabel={week.templateName}
     weekRangeLabel={weekRangeLabel(week.weekStart, week.weekEnd)}
     {layoutMode}
@@ -1244,42 +1259,57 @@
     <section class="flex min-w-0 flex-1 flex-col">
       {#if layoutMode === "vertical"}
         <div
-          class="border-border bg-surface-2/70 grid h-10 shrink-0 border-b"
+          class="border-border bg-surface-2/70 grid min-h-12 shrink-0 border-b"
           style="grid-template-columns: 80px repeat({displayedDays.length}, minmax(150px, 1fr));"
         >
           <div class="text-muted-foreground flex items-center px-4 text-[12px]">
             All times
           </div>
           {#each displayedDays as day}
-            <button
-              class="border-border hover:bg-muted/30 border-l px-3 text-left transition-colors {day.weekday ===
-              visibleDay
-                ? 'text-[#bb9af7]'
-                : ''}"
-              data-testid={`day-header-${day.weekday}`}
-              on:click={(event) => openDayBoundsEditor(day.weekday, event)}
+            <div
+              class="border-border flex min-w-0 items-center gap-1 border-l px-2 py-1"
             >
-              <div
-                class="text-[14px] font-semibold"
-                data-testid={`day-label-${day.weekday}`}
+              <button
+                class="hover:bg-muted/30 min-w-0 flex-1 rounded px-1 py-1 text-left transition-colors {day.weekday ===
+                visibleDay
+                  ? 'text-[#bb9af7]'
+                  : ''}"
+                data-testid={`day-header-${day.weekday}`}
+                on:click={(event) => openDayBoundsEditor(day.weekday, event)}
               >
-                {day.dateLabel}
-              </div>
-              <div class="text-muted-foreground mt-0.5 flex gap-4 text-[10px]">
-                <span
-                  >Wake {formatTime(day.bounds.wakeMinute).replace(
-                    ":00 ",
-                    " ",
-                  )}</span
+                <div
+                  class="truncate text-[14px] font-semibold"
+                  data-testid={`day-label-${day.weekday}`}
                 >
-                <span
-                  >Sleep {formatTime(day.bounds.sleepMinute).replace(
-                    ":00 ",
-                    " ",
-                  )}</span
+                  {day.dateLabel}
+                </div>
+                <div
+                  class="text-muted-foreground mt-0.5 flex gap-3 text-[10px]"
                 >
-              </div>
-            </button>
+                  <span
+                    >Wake {formatTime(day.bounds.wakeMinute).replace(
+                      ":00 ",
+                      " ",
+                    )}</span
+                  >
+                  <span
+                    >Sleep {formatTime(day.bounds.sleepMinute).replace(
+                      ":00 ",
+                      " ",
+                    )}</span
+                  >
+                </div>
+              </button>
+              <DaySummaryButton
+                variant="header"
+                ariaLabel="Show scheduled time by category for {day.dateLabel}"
+                testId={`daily-summary-open-${day.weekday}`}
+                onOpen={(event) => {
+                  summaryTrigger = event.currentTarget as HTMLButtonElement;
+                  summaryDay = day;
+                }}
+              />
+            </div>
           {/each}
         </div>
       {/if}
@@ -1500,24 +1530,38 @@
                 class="border-border relative border-b"
                 style="height:{HORIZONTAL_ROW_HEIGHT}px;"
               >
-                <button
-                  class="bg-surface-2/95 border-border sticky top-0 bottom-0 left-0 z-20 h-full border-r px-3 text-left"
+                <div
+                  class="bg-surface-2/95 border-border sticky top-0 bottom-0 left-0 z-20 flex h-full flex-col justify-between border-r px-2 py-2"
                   style="width:{HORIZONTAL_LABEL_WIDTH}px;"
-                  data-testid={`day-header-${day.weekday}`}
-                  on:click={(event) => openDayBoundsEditor(day.weekday, event)}
                 >
-                  <div
-                    class="text-[13px] font-semibold"
-                    data-testid={`day-label-${day.weekday}`}
+                  <button
+                    class="text-left hover:text-[#bb9af7]"
+                    data-testid={`day-header-${day.weekday}`}
+                    on:click={(event) =>
+                      openDayBoundsEditor(day.weekday, event)}
                   >
-                    {day.dateLabel}
-                  </div>
-                  {#if day.dateLabel !== day.dayName}
-                    <div class="text-muted-foreground mt-1 text-[10px]">
-                      {day.dayName}
+                    <div
+                      class="text-[13px] font-semibold"
+                      data-testid={`day-label-${day.weekday}`}
+                    >
+                      {day.dateLabel}
                     </div>
-                  {/if}
-                </button>
+                    {#if day.dateLabel !== day.dayName}
+                      <div class="text-muted-foreground mt-1 text-[10px]">
+                        {day.dayName}
+                      </div>
+                    {/if}
+                  </button>
+                  <DaySummaryButton
+                    variant="timeline"
+                    ariaLabel="Show scheduled time by category for {day.dateLabel}"
+                    testId={`daily-summary-open-${day.weekday}`}
+                    onOpen={(event) => {
+                      summaryTrigger = event.currentTarget as HTMLButtonElement;
+                      summaryDay = day;
+                    }}
+                  />
+                </div>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <div
@@ -2118,6 +2162,14 @@
       onDelete={deleteVersion}
       onSetDefault={setDefaultVersion}
       onClose={() => (versionMenuOpen = false)}
+    />
+  {/if}
+
+  {#if summaryDay}
+    <DayCategorySummary
+      day={summaryDay}
+      categories={week.categories}
+      onClose={closeDayCategorySummary}
     />
   {/if}
 </div>

@@ -40,9 +40,7 @@
   const bySort = (a: Category, b: Category) => a.sortOrder - b.sortOrder;
 
   const activeParents = $derived(
-    categories
-      .filter((c) => c.parentId === null && !c.archived)
-      .sort(bySort),
+    categories.filter((c) => c.parentId === null && !c.archived).sort(bySort),
   );
   const archivedCategories = $derived(
     categories.filter((c) => c.archived).sort(bySort),
@@ -58,9 +56,7 @@
   // (anything but itself). Empty when there are no other parents available.
   function eligibleParents(category: Category): Category[] {
     return categories
-      .filter(
-        (c) => c.parentId === null && !c.archived && c.id !== category.id,
-      )
+      .filter((c) => c.parentId === null && !c.archived && c.id !== category.id)
       .sort(bySort);
   }
 
@@ -110,13 +106,19 @@
   function openChildForm(parentId: string) {
     addingChildFor = parentId;
     childName = "";
-    childColor = "#7aa2f7";
+    childColor =
+      categories.find((category) => category.id === parentId)?.color ??
+      "#7aa2f7";
   }
 </script>
 
 <!-- Full editing controls for one category (parent or child). `siblingIdx` /
      `siblingCount` drive the within-group reorder arrows. -->
-{#snippet categoryRow(category: Category, siblingIdx: number, siblingCount: number)}
+{#snippet categoryRow(
+  category: Category,
+  siblingIdx: number,
+  siblingCount: number,
+)}
   {@const inUse = inUseIds.has(category.id)}
   <div class="mb-3 flex items-center gap-2">
     <input
@@ -229,7 +231,9 @@
       type="button"
       class="rounded px-2 py-1 text-red-300 hover:bg-red-500/10 disabled:opacity-30 disabled:hover:bg-transparent"
       aria-label={inUse ? "Delete (used by items, archive instead)" : "Delete"}
-      title={inUse ? "Used by schedule items or subcategories — archive instead" : ""}
+      title={inUse
+        ? "Used by schedule items or subcategories — archive instead"
+        : ""}
       data-testid="category-delete-{category.id}"
       disabled={inUse}
       onclick={() => onDelete(category.id)}

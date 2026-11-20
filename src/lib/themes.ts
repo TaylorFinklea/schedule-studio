@@ -78,7 +78,6 @@ export const APP_THEMES = [
   }),
 ] satisfies AppTheme[];
 
-
 export const DEFAULT_THEME_ID = "tokyo-night";
 
 export function themeById(id: string): AppTheme {

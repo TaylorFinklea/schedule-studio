@@ -1,0 +1,39 @@
+// Cloudflare Workers + D1 configuration template.
+//
+// This file is safe to commit: it carries placeholders, and local tooling
+// (`pnpm test:workerd`, `pnpm cf-typegen`, `pnpm dev:cloudflare`) uses it as-is.
+// To deploy, copy it to `wrangler.production.jsonc` (gitignored), fill in your
+// own values, and run `pnpm deploy:cloudflare`. See docs/deploy-cloudflare.md.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "schedule-studio",
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "compatibility_date": "2026-10-03",
+  "workers_dev": false,
+  "preview_urls": false,
+  // Production: add your custom domain, e.g.
+  // "routes": [{ "pattern": "schedule.example.com", "custom_domain": true }],
+  "assets": {
+    "directory": ".svelte-kit/cloudflare",
+    "binding": "ASSETS",
+  },
+  "observability": { "enabled": true },
+  "vars": {
+    // Your Cloudflare Access team domain.
+    "CLOUDFLARE_ACCESS_ISSUER": "https://your-team.cloudflareaccess.com",
+    // Audience (AUD) tag of the Access application protecting the hostname.
+    "CLOUDFLARE_ACCESS_AUD": "replace-with-access-application-aud-tag",
+    // The only hostname the Worker will serve.
+    "SCHEDULE_STUDIO_HOSTNAME": "schedule.example.com",
+    // SCHEDULE_STUDIO_ACCESS_OWNER_EMAIL is a secret: `wrangler secret put`.
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "schedule-studio",
+      // Output of `wrangler d1 create schedule-studio`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+}

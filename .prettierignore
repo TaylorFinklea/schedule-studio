@@ -1,0 +1,4 @@
+# Tool-managed files
+.beads/
+.pnpm-store/
+pnpm-lock.yaml

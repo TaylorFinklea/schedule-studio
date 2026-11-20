@@ -12,6 +12,7 @@
   type LayoutMode = "vertical" | "horizontal";
 
   type Props = {
+    ingressPath: string;
     versionLabel: string;
     weekRangeLabel: string;
     layoutMode: LayoutMode;
@@ -28,6 +29,7 @@
   };
 
   let {
+    ingressPath,
     versionLabel,
     weekRangeLabel,
     layoutMode,
@@ -44,14 +46,25 @@
   }: Props = $props();
 
   const zoomPercent = $derived(Math.round((hourHeight / defaultZoom) * 100));
+  const logoUrl = $derived(`${ingressPath}/favicon.svg`);
 </script>
 
 <header
   class="border-border bg-surface flex h-14 shrink-0 items-center gap-3 border-b px-4"
 >
-  <div class="flex items-center gap-2">
-    <span class="bg-primary block h-2 w-2 rounded-full" aria-hidden="true"
-    ></span>
+  <div class="flex shrink-0 items-center gap-2">
+    <img
+      src={logoUrl}
+      alt=""
+      aria-hidden="true"
+      class="size-8 shrink-0"
+      width="32"
+      height="32"
+    />
+    <span
+      class="text-foreground sr-only text-[12px] font-semibold tracking-tight lg:not-sr-only"
+      >Schedule Studio</span
+    >
     <button
       type="button"
       class="text-foreground hover:bg-muted flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium tracking-tight"

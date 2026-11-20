@@ -10,12 +10,12 @@ export async function PUT({ params, request }) {
     patch.categoryId = body.categoryId;
   if (body.durationMinutes === null || typeof body.durationMinutes === "number")
     patch.durationMinutes = body.durationMinutes;
-  const result = updateTodo(params.id, patch);
+  const result = await updateTodo(params.id, patch);
   if (!result) return json({ error: "not found" }, { status: 404 });
   return json(result);
 }
 
-export function DELETE({ params }) {
-  deleteTodo(params.id);
+export async function DELETE({ params }) {
+  await deleteTodo(params.id);
   return json({ ok: true });
 }

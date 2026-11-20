@@ -18,3 +18,5 @@ playwright-report
 Dockerfile
 docker-compose.yml
 README.md
+wrangler.production.jsonc
+.wrangler

@@ -36,7 +36,7 @@ export async function PUT({ params, request }) {
     update.parentId = payload.parentId;
   }
   try {
-    updateCategory(update);
+    await updateCategory(update);
     return json({ ok: true });
   } catch (error) {
     if (error instanceof CategoryHierarchyError) {
@@ -46,9 +46,9 @@ export async function PUT({ params, request }) {
   }
 }
 
-export function DELETE({ params }) {
+export async function DELETE({ params }) {
   try {
-    deleteCategory(params.id);
+    await deleteCategory(params.id);
     return json({ ok: true });
   } catch (error) {
     if (error instanceof CategoryInUseError) {
