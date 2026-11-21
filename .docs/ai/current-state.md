@@ -18,8 +18,7 @@ Portfolio/open-source Tier 1 cleanup (2026-11-20):
 
 - `pnpm lint`, `pnpm check` and `pnpm test` pass.
 - `pnpm test:workerd` passes against the placeholder `wrangler.jsonc`.
-- The Playwright desktop project passes 24/24. It was run locally with `channel: "chrome"` because the bundled browsers aren't installed.
-- The Playwright mobile project fails 6/24: the sticky day-label column intercepts taps on the grid (`schedule-studio-m6w`). CI runs `--project=chromium` until that's fixed.
+- Mobile grid taps fixed (2026-11-21, `schedule-studio-m6w`): the 300px to-do sidebar now starts collapsed on screens under 768px until the user expands it (state is saved only on toggle; the legacy auto-saved `"false"` counts as no choice), so the timeline gets the width. Playwright passes 26/26 on desktop and 26/26 on the Pixel 7 project (run locally with `channel: "chrome"`), and CI runs both.
 
 Earlier feature QA (2026-11-06):
 

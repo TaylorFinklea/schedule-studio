@@ -37,8 +37,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      # Desktop only for now: the mobile project has known layout failures.
-      - run: pnpm test:e2e --project=chromium
+      - run: pnpm test:e2e
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

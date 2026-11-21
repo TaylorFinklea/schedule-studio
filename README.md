@@ -104,7 +104,7 @@ These rules were added partway through the project. Recent commits record the re
 - `pnpm test:workerd` runs the D1 data layer inside a local `workerd` runtime.
 - Playwright tests the planner end to end, on desktop and on a mobile viewport (Pixel 7).
 - `svelte-check` handles type checking.
-- CI runs all of this except the Workerd and mobile suites.
+- CI runs all of this except the Workerd suite.
 
 ## Run it yourself
 
@@ -144,7 +144,7 @@ Layout and theme preferences are stored in the browser (`localStorage`). Schedul
 ```sh
 pnpm check          # svelte-check typecheck
 pnpm test           # Vitest unit tests
-pnpm test:e2e       # Playwright (Chromium + mobile; mobile has known failures)
+pnpm test:e2e       # Playwright (desktop Chromium + Pixel 7)
 pnpm test:workerd   # D1 data layer in a local workerd runtime
 pnpm build          # Node production build
 pnpm lint           # Prettier check
@@ -157,5 +157,3 @@ To deploy on Cloudflare, see [docs/deploy-cloudflare.md](docs/deploy-cloudflare.
 [MIT](LICENSE).
 
 **Status:** v0.1.5. A personal project with one maintainer, in use on my own setup. See the [changelog](CHANGELOG.md) and [roadmap](.docs/ai/roadmap.md).
-
-Known issue: on phone-width screens, the sticky day-label column blocks taps on the grid. Six mobile Playwright tests fail because of it, which is why CI runs the desktop suite only.

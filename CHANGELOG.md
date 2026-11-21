@@ -2,6 +2,12 @@
 
 Notable changes to Schedule Studio. Versions match `package.json`, the container image tag, and the Home Assistant add-on version. The add-on keeps its own short [changelog](home-assistant/schedule-studio/CHANGELOG.md) for the Home Assistant update UI.
 
+## Unreleased
+
+### Fixed
+
+- On phone-width screens the to-do sidebar starts collapsed until you expand it, so the timeline has room and its blocks can be tapped. The sidebar now saves its state only when you toggle it. CI now runs the mobile Playwright suite too.
+
 ## v0.1.5 tag — 2026-11-20
 
 The version number wasn't bumped after the June 0.1.5 release, so the `v0.1.5` Git tag (and the `0.1.5` container image built from `main`) also includes these changes.

@@ -24,7 +24,6 @@
 
 ## Now
 
-- [ ] **Mobile grid taps** — on phone widths the sticky day-label column intercepts taps on schedule items and drag gestures; 6 mobile e2e tests fail and CI runs desktop-only until fixed (`schedule-studio-m6w`)
 - [ ] **Drag-to-draw block creation** — Outlook-style click + drag on empty grid to size a new block before the editor opens (today: click anywhere creates a default 60-min block at click-pos)
 - [ ] **Drag between days** — horizontal layout supports resize within a day but not lateral drag to move a block to a different weekday
 - [ ] **Series UX polish** — Delete-series button in the editor, "updated N instances" toast after a propagating save, multi-day chip labels for clarity

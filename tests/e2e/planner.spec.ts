@@ -93,6 +93,50 @@ test("rows view keeps day labels pinned while scrolling the timeline", async ({
   expect(Math.abs((after?.x ?? 0) - (before?.x ?? 0))).toBeLessThan(2);
 });
 
+test("phone-width screens start with the to-do sidebar collapsed", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByTestId("todo-sidebar-collapsed")).toBeVisible();
+
+  // The timeline gets nearly the full width, so blocks can be tapped.
+  const timeline = await page.getByTestId("timeline-scroll").boundingBox();
+  expect(timeline?.width ?? 0).toBeGreaterThan(300);
+  const item = page.getByTestId("schedule-item").first();
+  await item.click();
+  await expect(
+    page.locator('section[aria-label="Add schedule item"]'),
+  ).toBeVisible();
+});
+
+test("the to-do sidebar remembers an explicit choice on a phone", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+
+  // Older versions saved "false" automatically; it isn't a choice.
+  await page.evaluate(() =>
+    localStorage.setItem("schedule-studio-todo-collapsed", "false"),
+  );
+  await page.reload();
+  await expect(page.getByTestId("todo-sidebar-collapsed")).toBeVisible();
+
+  // Expanding is a choice, and it survives a reload.
+  await page.getByRole("button", { name: "Expand todo sidebar" }).click();
+  await expect(page.getByTestId("todo-sidebar")).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId("todo-sidebar")).toBeVisible();
+
+  // So is collapsing.
+  await page.getByRole("button", { name: "Collapse todo sidebar" }).click();
+  await page.reload();
+  await expect(page.getByTestId("todo-sidebar-collapsed")).toBeVisible();
+});
+
 test("schedule settings apply visible time caps to every day", async ({
   page,
 }) => {

@@ -30,14 +30,24 @@
   let collapsed = $state(false);
   let newTitle = $state("");
 
-  $effect(() => {
-    const stored = localStorage.getItem("schedule-studio-todo-collapsed");
-    if (stored === "true") collapsed = true;
-  });
+  // "true" = the user collapsed the sidebar, "expanded" = the user expanded
+  // it. Older versions wrote "false" automatically on every visit, so it
+  // (like no value) means no choice yet.
+  const COLLAPSED_KEY = "schedule-studio-todo-collapsed";
 
   $effect(() => {
-    localStorage.setItem("schedule-studio-todo-collapsed", String(collapsed));
+    const stored = localStorage.getItem(COLLAPSED_KEY);
+    if (stored === "true") collapsed = true;
+    else if (stored !== "expanded")
+      // With no choice yet, start collapsed on phone-width screens: the
+      // 300px panel would otherwise leave the timeline almost no room.
+      collapsed = window.matchMedia("(max-width: 767px)").matches;
   });
+
+  function setCollapsed(value: boolean) {
+    collapsed = value;
+    localStorage.setItem(COLLAPSED_KEY, value ? "true" : "expanded");
+  }
   let newKind = $state<ItemKind>("block");
 
   const activeCategories = $derived(categories.filter((c) => !c.archived));
@@ -85,7 +95,7 @@
       class="text-muted-foreground hover:text-foreground flex h-10 w-10 items-center justify-center transition-colors"
       aria-label="Expand todo sidebar"
       title="To do"
-      onclick={() => (collapsed = false)}
+      onclick={() => setCollapsed(false)}
     >
       <ChevronLeft size={16} />
     </button>
@@ -115,7 +125,7 @@
           type="button"
           class="text-muted-foreground hover:text-foreground -mr-1 rounded p-0.5 transition-colors"
           aria-label="Collapse todo sidebar"
-          onclick={() => (collapsed = true)}
+          onclick={() => setCollapsed(true)}
         >
           <ChevronRight size={16} />
         </button>
