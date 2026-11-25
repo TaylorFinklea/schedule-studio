@@ -156,4 +156,4 @@ To deploy on Cloudflare, see [docs/deploy-cloudflare.md](docs/deploy-cloudflare.
 
 [MIT](LICENSE).
 
-**Status:** v0.1.5. A personal project with one maintainer, in use on my own setup. See the [changelog](CHANGELOG.md) and [roadmap](.docs/ai/roadmap.md).
+**Status:** v0.1.6. A personal project with one maintainer, in use on my own setup. See the [changelog](CHANGELOG.md) and [roadmap](.docs/ai/roadmap.md).

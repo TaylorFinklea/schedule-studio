@@ -2,7 +2,7 @@
 
 Notable changes to Schedule Studio. Versions match `package.json`, the container image tag, and the Home Assistant add-on version. The add-on keeps its own short [changelog](home-assistant/schedule-studio/CHANGELOG.md) for the Home Assistant update UI.
 
-## Unreleased
+## 0.1.6 — 2026-11-25
 
 ### Fixed
 
